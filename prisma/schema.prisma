@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Party {
+  id           String        @id @default(uuid())
+  name         String
+  startDate    DateTime?
+  endDate      DateTime?
+  participants Participant[]
+  categories   Category[]
+  inventory    InventoryItem[]
+  events       Event[]
+  expenses     Expense[]
+  receipts     Receipt[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?     // For undo support
+}
+
+model Participant {
+  id                 String             @id @default(uuid())
+  name               String
+  color              String?
+  notes              String?
+  partyId            String
+  party              Party              @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  eventParticipations EventParticipant[]
+  expenseShares      ExpenseParticipant[]
+  expensesPaid       Expense[]          @relation("ExpensePayer")
+  createdAt          DateTime           @default(now())
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String
+  isAlcohol Boolean   @default(false)
+  partyId   String
+  party     Party     @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  inventory InventoryItem[]
+  expenses  Expense[]
+}
+
+model InventoryItem {
+  id               String      @id @default(uuid())
+  name             String
+  categoryId       String?
+  category         Category?   @relation(fields: [categoryId], references: [id])
+  unit             String
+  initialQuantity  Float
+  remainingQuantity Float
+  totalPrice       Float
+  unitPrice        Float       // Computed: totalPrice / initialQuantity
+  notes            String?
+  partyId          String
+  party            Party       @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  receiptId        String?
+  receipt          Receipt?    @relation(fields: [receiptId], references: [id])
+  eventUsages      EventItem[]
+}
+
+model Event {
+  id           String             @id @default(uuid())
+  name         String
+  date         DateTime?
+  description  String?
+  partyId      String
+  party        Party              @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  participants EventParticipant[]
+  itemsUsed    EventItem[]
+}
+
+model EventParticipant {
+  eventId       String
+  participantId String
+  event         Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  @@id([eventId, participantId])
+}
+
+model EventItem {
+  eventId         String
+  inventoryItemId String
+  quantityUsed    Float
+  event           Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  @@id([eventId, inventoryItemId])
+}
+
+model Expense {
+  id           String               @id @default(uuid())
+  name         String
+  categoryId   String?
+  category     Category?            @relation(fields: [categoryId], references: [id])
+  amount       Float
+  partyId      String
+  party        Party                @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  paidById     String?              // Quem pagou a despesa
+  paidBy       Participant?         @relation("ExpensePayer", fields: [paidById], references: [id])
+  participants ExpenseParticipant[]
+}
+
+model ExpenseParticipant {
+  expenseId     String
+  participantId String
+  amountOwed    Float?    // If null, divide equally
+  expense       Expense     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  @@id([expenseId, participantId])
+}
+
+model Receipt {
+  id        String          @id @default(uuid())
+  imagePath String
+  storeName String?
+  date      DateTime?
+  notes     String?
+  partyId   String
+  party     Party           @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  items     InventoryItem[]
+  createdAt DateTime        @default(now())
+}
