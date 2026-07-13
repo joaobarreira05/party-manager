@@ -96,7 +96,7 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
       if (data.error) {
         toast.error(data.error);
       } else {
-        toast.info("Fatura guardada! A extrair produtos com IA...");
+        toast.info("Fatura guardada! A ler a fatura (OCR)...");
         
         let initialItems: ReceiptItem[] = [{ id: crypto.randomUUID(), name: "", quantity: 1, unit: "un", totalPrice: 0 }];
         
@@ -119,7 +119,7 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
               toast.error("Não foi possível extrair produtos. Preencha manualmente.");
             }
           } catch (err) {
-            toast.error("Erro no processo de IA. Pode preencher manualmente.");
+            toast.error("Erro no OCR. Pode preencher manualmente.");
           }
         }
 
