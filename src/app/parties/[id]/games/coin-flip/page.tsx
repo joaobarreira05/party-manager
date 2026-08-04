@@ -7,37 +7,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useActiveParticipant } from "@/lib/use-active-participant";
 import { toast } from "sonner";
 
 export default function CoinFlipPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const partyId = resolvedParams.id;
+  const { currentParticipant } = useActiveParticipant(partyId);
 
-  const [participants, setParticipants] = useState<any[]>([]);
   const [duels, setDuels] = useState<any[]>([]);
 
   // Create Duel State
-  const [createParticipantId, setCreateParticipantId] = useState("");
   const [choice, setChoice] = useState<"heads" | "tails">("heads");
   const [amount, setAmount] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
 
-  // Join State
-  const [joinParticipantId, setJoinParticipantId] = useState("");
-  const [selectedDuelId, setSelectedDuelId] = useState<string | null>(null);
-
   // Spin State
   const [spinningId, setSpinningId] = useState<string | null>(null);
-  const [spinningResult, setSpinningResult] = useState<"heads" | "tails" | null>(null);
 
   const loadData = async () => {
     try {
-      const resP = await fetch(`/api/parties/${partyId}/penalties`);
-      const dataP = await resP.json();
-      if (dataP.participants) setParticipants(dataP.participants);
-
       const resD = await fetch(`/api/parties/${partyId}/games/coin-flip`);
       const dataD = await resD.json();
       if (dataD.coinFlips) setDuels(dataD.coinFlips);
@@ -50,10 +40,13 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
     loadData();
   }, [partyId]);
 
+  const activeParticipantId = currentParticipant?.participantId;
+  const currentName = currentParticipant?.name || "Utilizador";
+
   const handleCreateDuel = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!createParticipantId || amount < 0.5) {
-      toast.error("Preenche o teu nome e o valor do duelo (mín. 0.5 penáltis)");
+    if (!activeParticipantId || amount < 0.5) {
+      toast.error("Erro no teu utilizador ou valor inválido (mín. 0.5 penáltis)");
       return;
     }
 
@@ -63,7 +56,7 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "create_duel",
-          participantId: createParticipantId,
+          participantId: activeParticipantId,
           choice,
           amount: Number(amount),
         }),
@@ -84,8 +77,8 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
   };
 
   const handleJoinDuel = async (duelId: string) => {
-    if (!joinParticipantId) {
-      toast.error("Seleciona quem és tu para aceitar o duelo!");
+    if (!activeParticipantId) {
+      toast.error("Erro ao identificar o teu utilizador!");
       return;
     }
 
@@ -96,7 +89,7 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
         body: JSON.stringify({
           action: "join_duel",
           coinFlipId: duelId,
-          participantId: joinParticipantId,
+          participantId: activeParticipantId,
         }),
       });
 
@@ -106,8 +99,7 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
         return;
       }
 
-      toast.success("Entraste no duelo! Agora podem girar a moeda! 🪙");
-      setSelectedDuelId(null);
+      toast.success("Entraste no duelo! Podem girar a moeda! 🪙");
       loadData();
     } catch (e) {
       toast.error("Erro de ligação");
@@ -116,7 +108,6 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
 
   const handleSpinCoin = async (duelId: string) => {
     setSpinningId(duelId);
-    setSpinningResult(null);
 
     try {
       const res = await fetch(`/api/parties/${partyId}/games/coin-flip`, {
@@ -134,7 +125,6 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
           return;
         }
 
-        setSpinningResult(data.result);
         toast.success(`🎉 A moeda deu ${data.result === "heads" ? "CARA 👑" : "COROA ⚔️"}! Vencedor: ${data.winner?.name}!`);
         loadData();
       }, 1500);
@@ -161,7 +151,9 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
             <h1 className="text-2xl font-extrabold flex items-center gap-2">
               <Swords className="w-6 h-6 text-amber-500" /> Duelos de Moeda 1v1
             </h1>
-            <p className="text-muted-foreground text-xs">Cria uma sala 1v1 contra um amigo. Quem perder bebe os penáltis!</p>
+            <p className="text-muted-foreground text-xs">
+              Sessão como <span className="font-bold text-foreground">{currentName}</span>. Cria um duelo 1v1 contra um amigo!
+            </p>
           </div>
         </div>
 
@@ -176,25 +168,11 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Criar Novo Duelo 1v1</DialogTitle>
-              <DialogDescription>Escolhe o teu lado e a quantidade de penáltis apostados.</DialogDescription>
+              <DialogDescription>
+                Criador: <span className="font-bold text-foreground">{currentName}</span>. Escolhe o teu lado e a aposta.
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateDuel} className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <Label>O Teu Nome (Criador)</Label>
-                <Select value={createParticipantId} onValueChange={(v) => setCreateParticipantId(v || "")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Escolhe o teu nome..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {participants.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="space-y-2">
                 <Label>A Tua Escolha</Label>
                 <div className="grid grid-cols-2 gap-3">
@@ -300,6 +278,7 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
             {openDuels.map((d) => {
               const creator = d.bets[0];
               const oppositeChoice = creator.choice === "heads" ? "COROA ⚔️" : "CARA 👑";
+              const isMine = creator.participantId === activeParticipantId;
 
               return (
                 <Card key={d.id} className="border-amber-500/30 bg-gradient-to-br from-card to-amber-500/5 shadow">
@@ -311,34 +290,22 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
                       </span>
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      Escolheu {creator.choice === "heads" ? "👑 CARA" : "⚔️ COROA"}. Ficas com {oppositeChoice}!
+                      Escolheu {creator.choice === "heads" ? "👑 CARA" : "⚔️ COROA"}. O oponente fica com {oppositeChoice}!
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="space-y-2">
-                      <Label className="text-xs">Quem é que vai aceitar o duelo?</Label>
-                      <Select value={joinParticipantId} onValueChange={(v) => setJoinParticipantId(v || "")}>
-                        <SelectTrigger className="h-9 text-xs">
-                          <SelectValue placeholder="Escolhe o teu nome..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {participants
-                            .filter((p) => p.id !== creator.participantId)
-                            .map((p) => (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <Button
-                      onClick={() => handleJoinDuel(d.id)}
-                      className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs h-9 gap-2"
-                    >
-                      <UserCheck className="w-4 h-4" /> Aceitar Duelo! ⚔️
-                    </Button>
+                    {isMine ? (
+                      <div className="text-xs text-amber-600 font-semibold p-2 bg-amber-500/10 rounded text-center">
+                        Este duelo é teu! À espera que outro amigo aceite...
+                      </div>
+                    ) : (
+                      <Button
+                        onClick={() => handleJoinDuel(d.id)}
+                        className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs h-10 gap-2"
+                      >
+                        <UserCheck className="w-4 h-4" /> Aceitar Duelo como {currentName}! ⚔️
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               );

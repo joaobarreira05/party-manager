@@ -9,24 +9,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useActiveParticipant } from "@/lib/use-active-participant";
 import { toast } from "sonner";
 
 export default function ChallengesPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const partyId = resolvedParams.id;
+  const { currentParticipant } = useActiveParticipant(partyId);
 
   const [challenges, setChallenges] = useState<any[]>([]);
   const [participants, setParticipants] = useState<any[]>([]);
 
   // Create Challenge state
-  const [createdById, setCreatedById] = useState("");
   const [description, setDescription] = useState("");
   const [openDialog, setOpenDialog] = useState(false);
 
   // Bet State
-  const [betParticipantId, setBetParticipantId] = useState("");
   const [betAmount, setBetAmount] = useState(1);
-  const [activeChallengeId, setActiveChallengeId] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -46,10 +45,13 @@ export default function ChallengesPage({ params }: { params: Promise<{ id: strin
     loadData();
   }, [partyId]);
 
+  const activeParticipantId = currentParticipant?.participantId;
+  const currentName = currentParticipant?.name || "Utilizador";
+
   const handleCreateChallenge = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!createdById || !description) {
-      toast.error("Preenche o teu nome e a descrição do desafio");
+    if (!activeParticipantId || !description) {
+      toast.error("Preenche a descrição do desafio");
       return;
     }
 
@@ -57,7 +59,7 @@ export default function ChallengesPage({ params }: { params: Promise<{ id: strin
       const res = await fetch(`/api/parties/${partyId}/games/challenges`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "create", createdById, description }),
+        body: JSON.stringify({ action: "create", createdById: activeParticipantId, description }),
       });
 
       const data = await res.json();
@@ -76,8 +78,8 @@ export default function ChallengesPage({ params }: { params: Promise<{ id: strin
   };
 
   const handleBet = async (challengeId: string) => {
-    if (!betParticipantId || betAmount < 0.5) {
-      toast.error("Seleciona quem és tu para apostar (mín. 0.5 penáltis)");
+    if (!activeParticipantId || betAmount < 0.5) {
+      toast.error("Erro no teu utilizador (mín. 0.5 penáltis)");
       return;
     }
 
@@ -88,7 +90,7 @@ export default function ChallengesPage({ params }: { params: Promise<{ id: strin
         body: JSON.stringify({
           action: "bet",
           challengeId,
-          participantId: betParticipantId,
+          participantId: activeParticipantId,
           amount: Number(betAmount),
         }),
       });
@@ -99,8 +101,7 @@ export default function ChallengesPage({ params }: { params: Promise<{ id: strin
         return;
       }
 
-      toast.success("Aposta registada!");
-      setActiveChallengeId(null);
+      toast.success(`Aposta registada como ${currentName}!`);
       loadData();
     } catch (e) {
       toast.error("Erro ao apostar");
@@ -141,7 +142,9 @@ export default function ChallengesPage({ params }: { params: Promise<{ id: strin
             <h1 className="text-2xl font-extrabold flex items-center gap-2">
               <Flame className="w-6 h-6 text-red-500" /> Desafios & Apostas Livres
             </h1>
-            <p className="text-muted-foreground text-xs">Cria desafios personalizados e aposta penáltis com a malta!</p>
+            <p className="text-muted-foreground text-xs">
+              Sessão como <span className="font-bold text-foreground">{currentName}</span>. Cria desafios e aposta penáltis com a malta!
+            </p>
           </div>
         </div>
 
@@ -156,25 +159,11 @@ export default function ChallengesPage({ params }: { params: Promise<{ id: strin
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Criar Novo Desafio</DialogTitle>
-              <DialogDescription>Qual é a aposta ou desafio que queres lançar à festa?</DialogDescription>
+              <DialogDescription>
+                Criador: <span className="font-bold text-foreground">{currentName}</span>. Qual é a aposta ou desafio?
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateChallenge} className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <Label>Criador do Desafio</Label>
-                <Select value={createdById} onValueChange={(val) => setCreatedById(val || "")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Escolhe o teu nome..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {participants.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="space-y-2">
                 <Label>Descrição do Desafio</Label>
                 <Input
@@ -186,7 +175,7 @@ export default function ChallengesPage({ params }: { params: Promise<{ id: strin
               </div>
 
               <Button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold">
-                Lançar Desafio! 🔥
+                Lançar Desafio como {currentName}! 🔥
               </Button>
             </form>
           </DialogContent>
@@ -258,31 +247,18 @@ export default function ChallengesPage({ params }: { params: Promise<{ id: strin
                   ))}
 
                   {c.status === "open" && (
-                    <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                      <Select value={betParticipantId} onValueChange={(val) => setBetParticipantId(val || "")}>
-                        <SelectTrigger className="text-xs">
-                          <SelectValue placeholder="Quem és tu..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {participants.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>
-                              {p.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-
+                    <div className="flex items-center gap-2 pt-2">
                       <Input
                         type="number"
                         step="0.5"
                         min="0.5"
-                        className="w-24 text-xs"
+                        className="w-28 text-xs font-bold"
                         value={betAmount}
                         onChange={(e) => setBetAmount(parseFloat(e.target.value) || 0.5)}
                       />
 
-                      <Button size="sm" onClick={() => handleBet(c.id)} className="bg-amber-600 text-white font-bold shrink-0">
-                        Apostar Penáltis! 🍺
+                      <Button size="sm" onClick={() => handleBet(c.id)} className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs gap-1">
+                        Apostar {betAmount} Penáltis como {currentName}! 🍺
                       </Button>
                     </div>
                   )}

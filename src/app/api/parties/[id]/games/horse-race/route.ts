@@ -5,7 +5,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id: partyId } = await params;
 
-    // Get current active or latest race
     let currentRace = await prisma.horseRace.findFirst({
       where: { partyId },
       include: {
@@ -16,7 +15,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       orderBy: { createdAt: "desc" },
     });
 
-    // If no race exists or current is finished, allow starting a new one
     if (!currentRace) {
       currentRace = await prisma.horseRace.create({
         data: {
@@ -52,11 +50,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "As apostas para esta corrida já estão fechadas" }, { status: 400 });
       }
 
-      // Check penalty balance
       const pBalance = await prisma.penaltyBalance.findUnique({ where: { participantId } });
       const currentBal = pBalance?.balance || 0;
       if (currentBal - amount < -5) {
-        return NextResponse.json({ error: "Não podes apostar! O teu saldo de penáltis não pode ser menor que -5." }, { status: 400 });
+        return NextResponse.json({ error: "Não podes apostar! Saldo mínimo: -5 penáltis." }, { status: 400 });
       }
 
       const bet = await prisma.horseRaceBet.create({
@@ -73,7 +70,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     if (action === "start_race") {
-      // Manager starts race and resolves winner
       const race = await prisma.horseRace.findUnique({
         where: { id: raceId },
         include: { bets: { include: { participant: true } } },
@@ -83,10 +79,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Corrida não encontrada" }, { status: 404 });
       }
 
-      // Select random winning horse 1..6
-      const winningHorse = Math.floor(Math.random() * 6) + 1;
+      // 4 horses only (1..4)
+      const winningHorse = Math.floor(Math.random() * 4) + 1;
 
-      // Update race status
       const updatedRace = await prisma.horseRace.update({
         where: { id: raceId },
         data: {
@@ -96,18 +91,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         include: { bets: { include: { participant: true } } },
       });
 
-      // Settle all bets
       for (const b of race.bets) {
         const won = b.horseNumber === winningHorse;
         if (won) {
-          // Winner gets positive balance (can send penalties to others)
           await prisma.penaltyBalance.upsert({
             where: { participantId: b.participantId },
             update: { balance: { increment: b.amount * 2 } },
             create: { participantId: b.participantId, balance: b.amount * 2 },
           });
         } else {
-          // Loser gets penalty to drink
           await prisma.penaltyBalance.upsert({
             where: { participantId: b.participantId },
             update: { balance: { decrement: b.amount } },

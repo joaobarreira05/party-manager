@@ -7,25 +7,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
+import { useActiveParticipant } from "@/lib/use-active-participant";
 import { toast } from "sonner";
 
 export default function PenaltiesPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const partyId = resolvedParams.id;
+  const { currentParticipant } = useActiveParticipant(partyId);
 
   const [participants, setParticipants] = useState<any[]>([]);
   const [pendingTx, setPendingTx] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Transfer form state
-  const [fromId, setFromId] = useState("");
   const [toId, setToId] = useState("");
   const [amount, setAmount] = useState(1);
   const [sending, setSending] = useState(false);
-
-  // Confirmation state
-  const [confirmerId, setConfirmerId] = useState("");
 
   const loadData = async () => {
     try {
@@ -44,13 +41,15 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
     loadData();
   }, [partyId]);
 
+  const activeParticipantId = currentParticipant?.participantId || participants[0]?.id;
+
   const handleSendPenalty = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fromId || !toId || amount < 0.5) {
+    if (!activeParticipantId || !toId || amount < 0.5) {
       toast.error("Preenche todos os campos. Mínimo para envio: 0.5 penáltis.");
       return;
     }
-    if (fromId === toId) {
+    if (activeParticipantId === toId) {
       toast.error("Não podes enviar penáltis para ti próprio!");
       return;
     }
@@ -62,7 +61,7 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "transfer",
-          fromParticipantId: fromId,
+          fromParticipantId: activeParticipantId,
           toParticipantId: toId,
           amount: Number(amount),
         }),
@@ -76,6 +75,7 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
       }
 
       toast.success(`Penálti de ${amount} enviado com sucesso! 🍺`);
+      setToId("");
       loadData();
     } catch (e) {
       toast.error("Erro de ligação");
@@ -85,8 +85,8 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
   };
 
   const handleConfirmDrink = async (transactionId: string) => {
-    if (!confirmerId) {
-      toast.error("Seleciona quem és tu para confirmar a bebida!");
+    if (!activeParticipantId) {
+      toast.error("Erro na identificação do teu utilizador");
       return;
     }
 
@@ -97,7 +97,7 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
         body: JSON.stringify({
           action: "confirm_drink",
           transactionId,
-          confirmedById: confirmerId,
+          confirmedById: activeParticipantId,
         }),
       });
 
@@ -118,6 +118,8 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
     }
   };
 
+  const currentName = currentParticipant?.name || "Utilizador";
+
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-12">
       {/* Header */}
@@ -128,7 +130,7 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
             <span>Sistema de Penáltis & Bebidas</span>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Ganha penáltis nos jogos para enviar a outros. 3 pessoas têm de confirmar que bebeste para saldar!
+            Sessão iniciada como <span className="font-bold text-foreground">{currentName}</span>. Ganha penáltis nos jogos para enviar a outros!
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={loadData} className="gap-2 self-start md:self-auto">
@@ -136,7 +138,7 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
         </Button>
       </div>
 
-      {/* Grid: Send Penalties & Confirmator selector */}
+      {/* Grid: Send Penalties & User Identity */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Send Penalty Card */}
         <Card className="border-border/60 shadow-md">
@@ -151,34 +153,25 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
           </CardHeader>
           <form onSubmit={handleSendPenalty}>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Quem Envia (Tu)</Label>
-                <Select value={fromId} onValueChange={(val) => setFromId(val || "")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleciona quem envia..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {participants.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name} (Saldo: {p.penaltyBalance?.balance ?? 0})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="p-3 bg-muted/50 rounded-lg text-sm flex items-center justify-between">
+                <span className="text-muted-foreground">De (Tu):</span>
+                <span className="font-bold text-foreground">{currentName}</span>
               </div>
 
               <div className="space-y-2">
                 <Label>Para Quem Recebe (Vai ter de beber)</Label>
-                <Select value={toId} onValueChange={(val) => setToId(val || "")}>
+                <Select value={toId} onValueChange={(v) => setToId(v || "")}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleciona quem vai beber..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {participants.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
+                    {participants
+                      .filter((p) => p.id !== activeParticipantId)
+                      .map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name} (Saldo: {p.penaltyBalance?.balance ?? 0})
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -203,38 +196,24 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
           </form>
         </Card>
 
-        {/* Confirmer Selector Card */}
-        <Card className="border-border/60 shadow-md">
+        {/* Confirmer Info Card */}
+        <Card className="border-border/60 shadow-md flex flex-col justify-between">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-              Quem está a confirmar bebidas?
+              Confirmação de Bebidas
             </CardTitle>
             <CardDescription>
-              Seleciona o teu nome abaixo para confirmares quando vires os teus amigos a beber penáltis!
+              Estás autenticado como <span className="font-bold text-foreground">{currentName}</span>. Quando vires os teus amigos a beber penáltis na vida real, clica em "Confirmar que Bebeu"!
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>A Tua Identidade (Testemunha)</Label>
-              <Select value={confirmerId} onValueChange={(val) => setConfirmerId(val || "")}>
-                <SelectTrigger className="border-emerald-500/50 bg-emerald-500/5">
-                  <SelectValue placeholder="Escolhe quem és..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {participants.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="p-4 bg-emerald-500/10 text-emerald-700 rounded-xl text-sm font-medium flex items-center gap-3">
+              <ShieldAlert className="w-6 h-6 shrink-0" />
+              <span>
+                As tuas confirmações serão automaticamente registadas com o teu nome (<span className="font-bold">{currentName}</span>). São precisas 3 testemunhas para saldar cada penálti!
+              </span>
             </div>
-            {confirmerId && (
-              <div className="p-3 bg-emerald-500/10 text-emerald-600 rounded-lg text-sm font-medium flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4" /> Pronto para testemunhar e confirmar as bebidas da malta!
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>
@@ -293,6 +272,8 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
               pendingTx.map((tx) => {
                 const count = tx.confirmations?.length || 0;
                 const progressPct = (count / 3) * 100;
+                const alreadyConfirmed = tx.confirmations?.some((c: any) => c.confirmedById === activeParticipantId);
+
                 return (
                   <div key={tx.id} className="p-4 rounded-xl border bg-card/60 space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -305,11 +286,12 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
                       </div>
                       <Button
                         size="sm"
+                        disabled={alreadyConfirmed || tx.toId === activeParticipantId}
                         onClick={() => handleConfirmDrink(tx.id)}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shrink-0 gap-1.5"
                       >
                         <CheckCircle2 className="w-4 h-4" />
-                        Confirmar que Bebeu! ({count}/3)
+                        {alreadyConfirmed ? "Já Confirmaste! ✓" : `Confirmar que Bebeu! (${count}/3)`}
                       </Button>
                     </div>
 
@@ -318,7 +300,9 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
                         <span>Progresso de Confirmação</span>
                         <span className="font-semibold">{count}/3 Testemunhas</span>
                       </div>
-                      <Progress value={progressPct} className="h-2" />
+                      <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${progressPct}%` }} />
+                      </div>
                     </div>
 
                     {count > 0 && (
