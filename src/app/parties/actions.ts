@@ -7,6 +7,7 @@ import prisma from "@/lib/prisma";
 
 const partySchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
+  accessPassword: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 });
@@ -19,9 +20,9 @@ export async function createParty(prevState: any, formData: FormData) {
     return { error: parsed.error.issues[0].message };
   }
 
-  const { name, startDate, endDate } = parsed.data;
+  const { name, accessPassword, startDate, endDate } = parsed.data;
 
-  // Defaults categories
+  // Default categories
   const defaultCategories = [
     { name: "Álcool", isAlcohol: true },
     { name: "Comida", isAlcohol: false },
@@ -34,6 +35,7 @@ export async function createParty(prevState: any, formData: FormData) {
   const party = await prisma.party.create({
     data: {
       name,
+      accessPassword: accessPassword || null,
       startDate: startDate ? new Date(startDate) : null,
       endDate: endDate ? new Date(endDate) : null,
       categories: {

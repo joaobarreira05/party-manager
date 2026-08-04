@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, KeyRound } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,7 @@ export default function NewPartyPage() {
       <Card>
         <CardHeader>
           <CardTitle>Nova Festa</CardTitle>
-          <CardDescription>Crie uma nova festa para gerir despesas e inventário.</CardDescription>
+          <CardDescription>Cria uma nova festa para gerir despesas, inventário e jogos.</CardDescription>
         </CardHeader>
         <form action={formAction}>
           <CardContent className="space-y-4">
@@ -37,6 +37,20 @@ export default function NewPartyPage() {
             <div className="space-y-2">
               <Label htmlFor="name">Nome da Festa</Label>
               <Input id="name" name="name" placeholder="Ex: Férias no Algarve" required />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="accessPassword">Palavra-passe de Acesso para Utilizadores (Opcional)</Label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="accessPassword"
+                  name="accessPassword"
+                  type="password"
+                  placeholder="Password para a malta poder entrar"
+                  className="pl-9"
+                />
+              </div>
             </div>
             
             <div className="grid grid-cols-2 gap-4">
