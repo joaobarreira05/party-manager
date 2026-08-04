@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogIn, LogOut, UserPlus, Shield, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ManageUsersDialog } from "@/components/manage-users-dialog";
 import { toast } from "sonner";
 
 interface UserNavProps {
@@ -47,6 +48,8 @@ export function UserNav({ session }: UserNavProps) {
 
   return (
     <div className="flex items-center gap-3">
+      {session.role === "manager" && <ManageUsersDialog />}
+
       <div className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-foreground font-medium">
         {session.role === "manager" ? (
           <Shield className="w-3.5 h-3.5 text-amber-500" />

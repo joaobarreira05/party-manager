@@ -16,13 +16,53 @@ export default async function PartyLayout({
 }) {
   const resolvedParams = await params;
   const session = await getSession();
-  
+
   const party = await prisma.party.findUnique({
     where: { id: resolvedParams.id, deletedAt: null },
   });
 
   if (!party) {
     notFound();
+  }
+
+  // Ensure logged-in user (including Manager) is a participant in this party so they can play, drink & wager
+  if (session) {
+    const existingParticipant = await prisma.participant.findFirst({
+      where: {
+        partyId: party.id,
+        userId: session.userId,
+      },
+    });
+
+    if (!existingParticipant) {
+      // Check if participant with matching name exists without userId
+      const matchingByName = await prisma.participant.findFirst({
+        where: {
+          partyId: party.id,
+          name: session.username,
+          userId: null,
+        },
+      });
+
+      if (matchingByName) {
+        await prisma.participant.update({
+          where: { id: matchingByName.id },
+          data: { userId: session.userId },
+        });
+      } else {
+        const newP = await prisma.participant.create({
+          data: {
+            name: session.username,
+            partyId: party.id,
+            userId: session.userId,
+          },
+        });
+
+        await prisma.penaltyBalance.create({
+          data: { participantId: newP.id, balance: 0 },
+        });
+      }
+    }
   }
 
   return (
@@ -46,9 +86,7 @@ export default async function PartyLayout({
 
       <main className="container mx-auto px-4 py-8 flex-1 flex flex-col">
         <PartyNav partyId={party.id} />
-        <div className="mt-6 flex-1">
-          {children}
-        </div>
+        <div className="mt-6 flex-1">{children}</div>
       </main>
     </div>
   );

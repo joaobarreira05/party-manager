@@ -2,10 +2,12 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
-import { Dices, ArrowLeft, RefreshCw, CheckCircle2, Sparkles, Trophy } from "lucide-react";
+import { Dices, ArrowLeft, RefreshCw, CheckCircle2, Sparkles, Trophy, Plus, Check } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 export default function BingoPage({ params }: { params: Promise<{ id: string }> }) {
@@ -16,8 +18,8 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
   const [participantId, setParticipantId] = useState("");
   const [game, setGame] = useState<any>(null);
   const [card, setCard] = useState<any>(null);
-  const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
-  const [drawing, setDrawing] = useState(false);
+  const [newActivity, setNewActivity] = useState("");
+  const [openAddDialog, setOpenAddDialog] = useState(false);
 
   const loadData = async () => {
     try {
@@ -29,7 +31,6 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
       const dataG = await resG.json();
       if (dataG.game) {
         setGame(dataG.game);
-        setDrawnNumbers(JSON.parse(dataG.game.drawnNumbers || "[]"));
       }
     } catch (e) {
       toast.error("Erro ao carregar Bingo");
@@ -58,48 +59,59 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
     }
   };
 
-  const handleDrawNumber = async () => {
-    if (!game) return;
-    setDrawing(true);
-    try {
-      const res = await fetch(`/api/parties/${partyId}/games/bingo`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "draw_number", gameId: game.id }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || "Erro ao sortear");
-        setDrawing(false);
-        return;
-      }
-
-      toast.success(`🎉 NÚMERO SORTEADO: ${data.drawnNumber}!`);
-      setDrawnNumbers(JSON.parse(data.game.drawnNumbers || "[]"));
-      setGame(data.game);
-    } catch (e) {
-      toast.error("Erro ao sortear número");
-    } finally {
-      setDrawing(false);
-    }
-  };
-
-  const handleMarkCell = async (num: number) => {
+  const handleToggleActivity = async (activityText: string) => {
     if (!card || !game) return;
     try {
       const res = await fetch(`/api/parties/${partyId}/games/bingo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "mark_number", gameId: game.id, participantId: card.participantId, numberToMark: num }),
+        body: JSON.stringify({
+          action: "toggle_activity",
+          gameId: game.id,
+          participantId: card.participantId,
+          activityToMark: activityText,
+        }),
       });
       const data = await res.json();
       if (data.card) {
         setCard(data.card);
-        toast.success(`Número ${num} marcado!`);
+        const marked: string[] = JSON.parse(data.card.markedNumbers || "[]");
+        if (marked.includes(activityText)) {
+          toast.success(`✓ "${activityText}" assinalado no teu Bingo! 🎉`);
+          if (marked.length >= 4) {
+            toast.success("🔥 BINGO! Já tens várias atividades marcadas!", { duration: 5000 });
+          }
+        }
       }
     } catch (e) {
-      toast.error("Erro ao marcar número");
+      toast.error("Erro ao marcar atividade");
+    }
+  };
+
+  const handleAddCustomActivity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newActivity.trim() || !game) return;
+
+    try {
+      const res = await fetch(`/api/parties/${partyId}/games/bingo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add_activity",
+          gameId: game.id,
+          customActivity: newActivity.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Nova atividade adicionada ao Bingo da festa! 🎉");
+        setNewActivity("");
+        setOpenAddDialog(false);
+        loadData();
+      }
+    } catch (e) {
+      toast.error("Erro ao adicionar atividade");
     }
   };
 
@@ -113,22 +125,20 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
       const data = await res.json();
       if (data.game) {
         setGame(data.game);
-        setDrawnNumbers([]);
         setCard(null);
-        toast.success("Novo jogo de Bingo iniciado!");
+        toast.success("Novo Bingo da Festa gerado!");
       }
     } catch (e) {
-      toast.error("Erro ao reiniciar jogo");
+      toast.error("Erro ao reiniciar Bingo");
     }
   };
 
-  const grid: number[][] = card?.numbers ? JSON.parse(card.numbers) : [];
-  const marked: number[] = card?.markedNumbers ? JSON.parse(card.markedNumbers) : [];
-  const lastDrawn = drawnNumbers.length > 0 ? drawnNumbers[drawnNumbers.length - 1] : null;
+  const grid: string[] = card?.numbers ? JSON.parse(card.numbers) : [];
+  const marked: string[] = card?.markedNumbers ? JSON.parse(card.markedNumbers) : [];
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto pb-12">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Link href={`/parties/${partyId}/games`}>
             <Button variant="outline" size="icon">
@@ -137,123 +147,123 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
           </Link>
           <div>
             <h1 className="text-2xl font-extrabold flex items-center gap-2">
-              <Dices className="w-6 h-6 text-purple-500" /> Bingo da Festa
+              <Dices className="w-6 h-6 text-purple-500" /> Bingo de Atividades da Festa
             </h1>
-            <p className="text-muted-foreground text-xs">Gera o teu cartão 5x5 e sorteia os números em direto!</p>
+            <p className="text-muted-foreground text-xs">
+              À medida que estas coisas acontecem em real-life na festa, vai marcando no teu cartão!
+            </p>
           </div>
         </div>
 
-        <Button variant="outline" size="sm" onClick={handleReset} className="gap-2">
-          <RefreshCw className="w-4 h-4" /> Novo Bingo
-        </Button>
+        <div className="flex items-center gap-2">
+          <Dialog open={openAddDialog} onOpenChange={setOpenAddDialog}>
+            <DialogTrigger
+              render={
+                <Button size="sm" variant="outline" className="gap-1.5 border-purple-500/40 text-purple-600">
+                  <Plus className="w-4 h-4" /> Adicionar Frase/Atividade
+                </Button>
+              }
+            />
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Adicionar Frase ao Bingo</DialogTitle>
+                <DialogDescription>Adiciona um acontecimento ou frase típica para figurar no Bingo da festa.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleAddCustomActivity} className="space-y-4 pt-2">
+                <Input
+                  placeholder="Ex: João vestiu uma peruca engraçada..."
+                  value={newActivity}
+                  onChange={(e) => setNewActivity(e.target.value)}
+                  required
+                />
+                <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold">
+                  Adicionar ao Bingo
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5">
+            <RefreshCw className="w-4 h-4" /> Novo Bingo
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Draw Column */}
-        <Card className="md:col-span-1 border-purple-500/30 bg-gradient-to-b from-purple-500/10 to-card">
-          <CardHeader className="text-center">
-            <CardTitle className="text-lg">Globo de Sorteio</CardTitle>
-            <CardDescription>Sorteia um número de 1 a 75</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6 text-center">
-            <div className="w-32 h-32 rounded-full border-4 border-purple-500 bg-background shadow-xl mx-auto flex flex-col items-center justify-center">
-              <span className="text-4xl font-black text-purple-600">
-                {drawing ? "..." : lastDrawn || "?"}
-              </span>
-              <span className="text-[10px] text-muted-foreground uppercase mt-1">Último Número</span>
+      {/* Main Card Section */}
+      <Card className="border-purple-500/30 shadow-xl bg-gradient-to-b from-card via-card to-purple-500/5">
+        <CardHeader>
+          <CardTitle className="text-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-500" /> Cartão do Jogador
+              {marked.length > 0 && (
+                <span className="text-xs bg-purple-600 text-white px-2.5 py-0.5 rounded-full font-extrabold">
+                  {marked.length}/16 Assinalados
+                </span>
+              )}
             </div>
 
-            <Button
-              onClick={handleDrawNumber}
-              disabled={drawing}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold h-12 text-base gap-2"
-            >
-              <Sparkles className="w-5 h-5" />
-              {drawing ? "A sortear..." : "SORTEAR NÚMERO! 🎯"}
-            </Button>
-
-            <div className="space-y-2 text-left">
-              <span className="text-xs font-semibold text-muted-foreground">Números Sorteados ({drawnNumbers.length}/75):</span>
-              <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto p-2 bg-background rounded-lg border text-xs font-mono">
-                {drawnNumbers.map((n) => (
-                  <span key={n} className="px-2 py-1 bg-purple-500/10 text-purple-600 rounded font-bold">
-                    {n}
-                  </span>
+            <Select value={participantId} onValueChange={handleGetCard}>
+              <SelectTrigger className="w-56 border-purple-500/40">
+                <SelectValue placeholder="Escolhe o teu nome para abrir cartão..." />
+              </SelectTrigger>
+              <SelectContent>
+                {participants.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!card ? (
+            <div className="text-center py-20 text-muted-foreground text-sm space-y-2">
+              <Dices className="w-12 h-12 text-purple-400 mx-auto animate-bounce" />
+              <div className="font-bold text-base text-foreground">Seleciona o teu nome acima!</div>
+              <p className="text-xs max-w-sm mx-auto">
+                Será gerado um cartão 4x4 único com acontecimentos e atividades da festa para irem assinalando ao longo da noite!
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {grid.map((actText, idx) => {
+                  const isDone = marked.includes(actText);
+
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleToggleActivity(actText)}
+                      className={`p-4 rounded-xl font-semibold text-xs transition-all border flex flex-col justify-between text-left min-h-[100px] ${
+                        isDone
+                          ? "bg-purple-600 text-white border-purple-700 shadow-lg scale-95 ring-2 ring-purple-400/50"
+                          : "bg-card hover:bg-purple-500/10 text-foreground border-border/80 shadow-sm"
+                      }`}
+                    >
+                      <span className="leading-snug">{actText}</span>
+                      <div className="flex justify-end pt-2">
+                        {isDone ? (
+                          <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1">
+                            <Check className="w-3 h-3" /> FEITO!
+                          </span>
+                        ) : (
+                          <span className="text-[10px] opacity-60">Toca p/ marcar</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="text-xs text-muted-foreground text-center pt-4 border-t flex items-center justify-center gap-2">
+                <span>💡 Toca numa célula sempre que aquele acontecimento se realizar na festa em tempo real!</span>
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Card Column */}
-        <Card className="md:col-span-2 border-border/60">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center justify-between">
-              <span>O Teu Cartão 5x5</span>
-              <Select value={participantId} onValueChange={handleGetCard}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Escolhe o teu nome..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {participants.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!card ? (
-              <div className="text-center py-16 text-muted-foreground text-sm">
-                Seleciona o teu nome acima para veres o teu cartão de Bingo!
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-5 gap-2 text-center font-black text-purple-600 pb-2 border-b">
-                  <div>B</div>
-                  <div>I</div>
-                  <div>N</div>
-                  <div>G</div>
-                  <div>O</div>
-                </div>
-
-                <div className="grid grid-cols-5 gap-2">
-                  {grid.map((row, rIdx) =>
-                    row.map((val, cIdx) => {
-                      const isMarked = marked.includes(val);
-                      const isDrawn = drawnNumbers.includes(val);
-
-                      return (
-                        <button
-                          key={`${rIdx}-${cIdx}`}
-                          type="button"
-                          onClick={() => handleMarkCell(val)}
-                          className={`h-14 rounded-lg font-bold text-sm transition-all border flex flex-col items-center justify-center ${
-                            isMarked
-                              ? "bg-purple-600 text-white border-purple-700 shadow-md scale-95"
-                              : isDrawn
-                              ? "bg-amber-500/20 text-amber-700 border-amber-500 animate-pulse"
-                              : "bg-card hover:bg-muted text-foreground"
-                          }`}
-                        >
-                          <span>{val}</span>
-                          {isDrawn && !isMarked && <span className="text-[9px] text-amber-600 font-normal">Sorteado!</span>}
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div className="text-xs text-muted-foreground text-center pt-2">
-                  Clica num número para marcares. Células amarelas indicam números que já foram sorteados!
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
