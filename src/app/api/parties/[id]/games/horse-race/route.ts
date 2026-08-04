@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       const race = await prisma.horseRace.findUnique({ where: { id: raceId } });
       if (!race || race.status !== "betting") {
-        return NextResponse.json({ error: "As apostas para esta corrida já estão fechadas" }, { status: 400 });
+        return NextResponse.json({ error: "As apostas para esta corrida já estão FECHADAS!" }, { status: 400 });
       }
 
       const pBalance = await prisma.penaltyBalance.findUnique({ where: { participantId } });
@@ -74,6 +74,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
 
       return NextResponse.json({ success: true, bet });
+    }
+
+    if (action === "lock_bets") {
+      const race = await prisma.horseRace.update({
+        where: { id: raceId },
+        data: { status: "racing" },
+        include: { bets: { include: { participant: true } } },
+      });
+      return NextResponse.json({ success: true, race });
     }
 
     if (action === "finish_race") {

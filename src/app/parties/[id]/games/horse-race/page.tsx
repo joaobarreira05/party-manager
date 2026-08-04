@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
-import { Trophy, ArrowLeft, Play, Sparkles, User, RefreshCw, Layers, Eye } from "lucide-react";
+import { Trophy, ArrowLeft, Play, Sparkles, User, RefreshCw, Layers, Eye, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,13 +12,27 @@ import { useActiveParticipant } from "@/lib/use-active-participant";
 import { toast } from "sonner";
 
 const SUITS = [
-  { id: 1, name: "Ás de Espadas ♠️", symbol: "♠️", color: "text-slate-900", bg: "bg-slate-900" },
-  { id: 2, name: "Ás de Ouros ♦️", symbol: "♦️", color: "text-red-600", bg: "bg-red-600" },
-  { id: 3, name: "Ás de Paus ♣️", symbol: "♣️", color: "text-slate-900", bg: "bg-slate-900" },
-  { id: 4, name: "Ás de Copas ♥️", symbol: "♥️", color: "text-red-600", bg: "bg-red-600" },
+  { id: 1, name: "Ás de Espadas ♠️", symbol: "♠️", color: "text-slate-900", isRed: false },
+  { id: 2, name: "Ás de Ouros ♦️", symbol: "♦️", color: "text-red-600", isRed: true },
+  { id: 3, name: "Ás de Paus ♣️", symbol: "♣️", color: "text-slate-900", isRed: false },
+  { id: 4, name: "Ás de Copas ♥️", symbol: "♥️", color: "text-red-600", isRed: true },
 ];
 
-const TRACK_STEPS = 12; // Exactly 12 steps/cards as requested!
+const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+const TRACK_STEPS = 12;
+
+interface TrackCard {
+  suitIdx: number;
+  rank: string;
+  flipped: boolean;
+}
+
+interface DrawnCardInfo {
+  suitIdx: number;
+  rank: string;
+  symbol: string;
+  isRed: boolean;
+}
 
 export default function HorseRacePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -31,10 +45,14 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
 
   // Positions of 4 Aces (0 to 12)
   const [positions, setPositions] = useState<number[]>([0, 0, 0, 0]);
-  
-  // 12 Track obstacle cards for each row
-  const [sideCards, setSideCards] = useState<{ suitIdx: number; flipped: boolean }[]>([]);
-  const [drawnCard, setDrawnCard] = useState<{ suitIdx: number; name: string } | null>(null);
+
+  // 12 Track obstacle cards (6 on left column, 6 on right column)
+  const [leftColumnCards, setLeftColumnCards] = useState<TrackCard[]>([]);
+  const [rightColumnCards, setRightColumnCards] = useState<TrackCard[]>([]);
+
+  // Currently drawn card with 3D animation
+  const [drawnCard, setDrawnCard] = useState<DrawnCardInfo | null>(null);
+  const [isFlippingCard, setIsFlippingCard] = useState(false);
   const [autoPlaying, setAutoPlaying] = useState(false);
   const [winner, setWinner] = useState<number | null>(null);
 
@@ -59,13 +77,17 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
     initTrackCards();
   }, [partyId]);
 
+  const getRandomCard = (): TrackCard => ({
+    suitIdx: Math.floor(Math.random() * 4),
+    rank: RANKS[Math.floor(Math.random() * RANKS.length)],
+    flipped: false,
+  });
+
   const initTrackCards = () => {
-    // Generate 12 hidden side cards randomly from 4 suits
-    const cards = Array.from({ length: TRACK_STEPS }, () => ({
-      suitIdx: Math.floor(Math.random() * 4),
-      flipped: false,
-    }));
-    setSideCards(cards);
+    const left = Array.from({ length: 6 }, () => getRandomCard());
+    const right = Array.from({ length: 6 }, () => getRandomCard());
+    setLeftColumnCards(left);
+    setRightColumnCards(right);
     setPositions([0, 0, 0, 0]);
     setWinner(null);
     setDrawnCard(null);
@@ -78,6 +100,10 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
     e.preventDefault();
     if (!activeParticipantId || !currentRace) {
       toast.error("Erro ao identificar o teu utilizador para apostar");
+      return;
+    }
+    if (currentRace.status !== "betting") {
+      toast.error("As apostas já estão FECHADAS para esta corrida!");
       return;
     }
 
@@ -107,35 +133,71 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
     }
   };
 
-  // Draw 1 single card step
-  const drawNextCard = (currentPos: number[], currentSide: { suitIdx: number; flipped: boolean }[]) => {
-    if (winner) return { newPos: currentPos, newSide: currentSide, newWinner: winner };
+  // Lock betting when race starts
+  const lockBetsIfNeeded = async () => {
+    if (currentRace && currentRace.status === "betting") {
+      try {
+        await fetch(`/api/parties/${partyId}/games/horse-race`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "lock_bets", raceId: currentRace.id }),
+        });
+        setCurrentRace({ ...currentRace, status: "racing" });
+      } catch (e) {
+        console.error("Error locking bets:", e);
+      }
+    }
+  };
+
+  // Draw 1 single card step with realistic playing card animation
+  const drawNextCardStep = (
+    currentPos: number[],
+    currentLeft: TrackCard[],
+    currentRight: TrackCard[]
+  ) => {
+    if (winner) return { newPos: currentPos, newLeft: currentLeft, newRight: currentRight, newWinner: winner };
 
     const suitIdx = Math.floor(Math.random() * 4);
+    const rank = RANKS[Math.floor(Math.random() * RANKS.length)];
     const suitObj = SUITS[suitIdx];
 
     const newPos = [...currentPos];
     newPos[suitIdx] = Math.min(TRACK_STEPS, newPos[suitIdx] + 1);
 
-    setDrawnCard({ suitIdx, name: suitObj.name });
+    setDrawnCard({
+      suitIdx,
+      rank,
+      symbol: suitObj.symbol,
+      isRed: suitObj.isRed,
+    });
 
-    // Check if ALL 4 Aces have passed a row that hasn't been flipped yet!
     const minPos = Math.min(...newPos);
-    const newSide = [...currentSide];
+    const newLeft = [...currentLeft];
+    const newRight = [...currentRight];
 
+    // Obstacle cards flip when ALL 4 Aces cross a row (Rows 1..12)
     if (minPos > 0 && minPos <= TRACK_STEPS) {
-      const rowToFlip = minPos - 1;
-      if (newSide[rowToFlip] && !newSide[rowToFlip].flipped) {
-        newSide[rowToFlip].flipped = true;
-        const penalizeSuit = newSide[rowToFlip].suitIdx;
-        
-        // THAT SUIT MOVES BACKWARDS 1 STEP!
-        newPos[penalizeSuit] = Math.max(0, newPos[penalizeSuit] - 1);
-        toast.error(`⚠️ Carta da Pista Virada! ${SUITS[penalizeSuit].name} RECUOU 1 PASSO! ⏪`);
+      const stepIdx = minPos - 1;
+
+      // Rows 0..5 on Left, Rows 6..11 on Right
+      if (stepIdx < 6) {
+        if (newLeft[stepIdx] && !newLeft[stepIdx].flipped) {
+          newLeft[stepIdx].flipped = true;
+          const penalizeSuit = newLeft[stepIdx].suitIdx;
+          newPos[penalizeSuit] = Math.max(0, newPos[penalizeSuit] - 1);
+          toast.error(`⚠️ Carta da Esquerda (${newLeft[stepIdx].rank}${SUITS[penalizeSuit].symbol}) virou! ${SUITS[penalizeSuit].name} RECUOU 1 PASSO! ⏪`);
+        }
+      } else {
+        const rightIdx = stepIdx - 6;
+        if (newRight[rightIdx] && !newRight[rightIdx].flipped) {
+          newRight[rightIdx].flipped = true;
+          const penalizeSuit = newRight[rightIdx].suitIdx;
+          newPos[penalizeSuit] = Math.max(0, newPos[penalizeSuit] - 1);
+          toast.error(`⚠️ Carta da Direita (${newRight[rightIdx].rank}${SUITS[penalizeSuit].symbol}) virou! ${SUITS[penalizeSuit].name} RECUOU 1 PASSO! ⏪`);
+        }
       }
     }
 
-    // Check if any Ace reached 12
     let newWinner = null;
     for (let i = 0; i < 4; i++) {
       if (newPos[i] >= TRACK_STEPS) {
@@ -144,48 +206,61 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
       }
     }
 
-    return { newPos, newSide, newWinner };
+    return { newPos, newLeft, newRight, newWinner };
   };
 
-  // Manual Draw Click
-  const handleManualDraw = () => {
+  // Manual Draw Button
+  const handleManualDraw = async () => {
     if (winner || !currentRace) return;
+    await lockBetsIfNeeded();
+    setIsFlippingCard(true);
 
-    const { newPos, newSide, newWinner } = drawNextCard(positions, sideCards);
-    setPositions(newPos);
-    setSideCards(newSide);
+    setTimeout(() => {
+      const { newPos, newLeft, newRight, newWinner } = drawNextCardStep(positions, leftColumnCards, rightColumnCards);
+      setPositions(newPos);
+      setLeftColumnCards(newLeft);
+      setRightColumnCards(newRight);
+      setIsFlippingCard(false);
 
-    if (newWinner) {
-      finishRace(newWinner);
-    }
+      if (newWinner) {
+        finishRace(newWinner);
+      }
+    }, 250);
   };
 
   // Auto Play Mode
-  const handleAutoPlay = () => {
+  const handleAutoPlay = async () => {
     if (winner || !currentRace) return;
+    await lockBetsIfNeeded();
     setAutoPlaying(true);
 
     let pos = [...positions];
-    let side = [...sideCards];
+    let left = [...leftColumnCards];
+    let right = [...rightColumnCards];
 
     const interval = setInterval(() => {
-      const res = drawNextCard(pos, side);
+      setIsFlippingCard(true);
+      const res = drawNextCardStep(pos, left, right);
       pos = res.newPos;
-      side = res.newSide;
+      left = res.newLeft;
+      right = res.newRight;
       setPositions([...pos]);
-      setSideCards([...side]);
+      setLeftColumnCards([...left]);
+      setRightColumnCards([...right]);
+
+      setTimeout(() => setIsFlippingCard(false), 200);
 
       if (res.newWinner) {
         clearInterval(interval);
         setAutoPlaying(false);
         finishRace(res.newWinner);
       }
-    }, 450);
+    }, 600);
   };
 
   const finishRace = async (winningHorse: number) => {
     setWinner(winningHorse);
-    toast.success(`🎉 O ${SUITS[winningHorse - 1].name} VENCEU A CORRIDA DE 12 CARTAS! Penáltis distribuídos!`);
+    toast.success(`🎉 O ${SUITS[winningHorse - 1].name} VENCEU A CORRIDA! Penáltis distribuídos!`);
 
     try {
       await fetch(`/api/parties/${partyId}/games/horse-race`, {
@@ -214,15 +289,17 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
       if (data.currentRace) {
         setCurrentRace(data.currentRace);
         initTrackCards();
-        toast.success("Nova Corrida de 12 Cartas aberta!");
+        toast.success("Nova Corrida de Cartas aberta para apostas!");
       }
     } catch (e) {
       toast.error("Erro ao criar nova corrida");
     }
   };
 
+  const isBettingClosed = currentRace?.status !== "betting";
+
   return (
-    <div className="space-y-8 max-w-5xl mx-auto pb-12">
+    <div className="space-y-8 max-w-6xl mx-auto pb-12">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href={`/parties/${partyId}/games`}>
@@ -232,10 +309,10 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
           </Link>
           <div>
             <h1 className="text-2xl font-extrabold flex items-center gap-2">
-              <Trophy className="w-6 h-6 text-amber-500" /> Corrida dos 4 Áses (12 Cartas da Pista)
+              <Trophy className="w-6 h-6 text-amber-500" /> Corrida dos 4 Áses (Baralho de Cartas)
             </h1>
             <p className="text-muted-foreground text-xs">
-              Sessão como <span className="font-bold text-foreground">{currentName}</span>. 12 Cartas laterais de obstáculo!
+              Sessão como <span className="font-bold text-foreground">{currentName}</span>. 2 Colunas de cartas nas laterais!
             </p>
           </div>
         </div>
@@ -245,16 +322,22 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
         </Button>
       </div>
 
-      {/* TRACK BOARD WITH CARDS & 4 ACES */}
+      {/* TRACK BOARD: LEFT COLUMN - 4 ACES TRACK - RIGHT COLUMN */}
       <Card className="border-amber-500/40 shadow-2xl overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-6 space-y-6 text-white">
         {/* Controls Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
           <div>
             <div className="font-black text-lg text-amber-400 flex items-center gap-2">
-              <Layers className="w-5 h-5" /> Pista de 12 Cartas Laterais
+              <Layers className="w-5 h-5" /> Baralho de Cartas & 2 Colunas Laterais
             </div>
             <div className="text-xs text-slate-400 mt-0.5">
-              Cada carta tirada avança o Ás. Quando todos passam uma fila, a carta virada faz o respetivo Ás recuar 1 passo!
+              {isBettingClosed ? (
+                <span className="text-red-400 font-bold flex items-center gap-1">
+                  <ShieldAlert className="w-3.5 h-3.5" /> Apostas Fechadas (Corrida em Curso)
+                </span>
+              ) : (
+                <span className="text-emerald-400 font-bold">🟢 Apostas Abertas! Aposta antes de tirar a 1ª carta.</span>
+              )}
             </div>
           </div>
 
@@ -262,7 +345,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
             <Button
               onClick={handleManualDraw}
               disabled={autoPlaying || !!winner || currentRace?.status === "finished"}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs gap-1.5"
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs gap-1.5 shadow-lg"
             >
               <Eye className="w-4 h-4" /> Tirar Carta 🃏
             </Button>
@@ -270,93 +353,142 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
             <Button
               onClick={handleAutoPlay}
               disabled={autoPlaying || !!winner || currentRace?.status === "finished"}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-lg"
             >
               <Play className="w-4 h-4 fill-white" /> {autoPlaying ? "A correr..." : "Modo Automático ⚡"}
             </Button>
           </div>
         </div>
 
-        {/* Drawn Card Center Indicator */}
-        {drawnCard && (
-          <div className="flex items-center justify-center gap-3 p-3 bg-slate-800/80 rounded-xl border border-slate-700 text-center animate-in zoom-in-95">
-            <span className="text-xs text-slate-400">Última Carta Tirada do Baralho:</span>
-            <span className={`font-black text-base px-3 py-1 bg-white rounded-md shadow ${SUITS[drawnCard.suitIdx].color}`}>
-              {drawnCard.name}
-            </span>
-          </div>
-        )}
-
-        {/* 4 Aces Track Lanes */}
-        <div className="space-y-4 py-2">
-          {SUITS.map((s, idx) => {
-            const pos = positions[idx] || 0;
-            const isWinner = winner === s.id;
-
-            return (
-              <div key={s.id} className="space-y-1">
-                <div className="flex justify-between text-xs font-bold px-1">
-                  <span className={s.color}>{s.name}</span>
-                  <span className="text-slate-400">Passo {pos}/12 {isWinner ? "🏆 VENCEDOR!" : ""}</span>
-                </div>
-
-                <div className="relative h-14 bg-slate-900 rounded-xl border-2 border-slate-700/80 flex items-center px-2 overflow-hidden shadow-inner">
-                  {/* 12 Step Grids */}
-                  <div className="absolute inset-0 grid grid-cols-12 border-slate-800/50">
-                    {Array.from({ length: 12 }).map((_, stepIdx) => {
-                      const sideCard = sideCards[stepIdx];
-                      return (
-                        <div key={stepIdx} className="border-r border-slate-800/60 flex items-center justify-center relative">
-                          {sideCard?.flipped && (
-                            <span className="text-[10px] opacity-40 font-bold">
-                              {SUITS[sideCard.suitIdx].symbol}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Physical Ace Playing Card Moving */}
-                  <div
-                    className="absolute transition-all duration-300 z-20 flex items-center"
-                    style={{ left: `${Math.max(1, (pos / TRACK_STEPS) * 88)}%` }}
-                  >
-                    <div className={`w-9 h-11 bg-white rounded-lg border-2 border-slate-950 shadow-2xl flex flex-col items-center justify-center font-black text-xs ${s.color} ring-2 ring-amber-400/50`}>
-                      <span>A</span>
-                      <span className="text-[9px] -mt-1">{s.symbol}</span>
-                    </div>
-                  </div>
-
-                  {/* Goal Finish Line */}
-                  <div className="absolute right-0 top-0 bottom-0 w-9 bg-red-600/90 border-l-2 border-dashed border-white flex items-center justify-center text-[10px] font-black text-white z-10 shadow">
-                    🏁
-                  </div>
-                </div>
+        {/* CENTER DECK & DRAWN PLAYING CARD ANIMATION STAGE */}
+        <div className="flex items-center justify-center py-4 border-b border-slate-800/80">
+          <div className="flex items-center gap-8">
+            {/* The Main Deck Back */}
+            <div className="flex flex-col items-center gap-1">
+              <div className="w-16 h-24 rounded-xl bg-gradient-to-tr from-amber-700 via-amber-600 to-yellow-500 border-2 border-white shadow-2xl flex items-center justify-center font-black text-white text-xl">
+                🂠
               </div>
-            );
-          })}
+              <span className="text-[10px] text-slate-400 font-bold">Baralho</span>
+            </div>
+
+            <div className="text-xl text-slate-500 font-black">➔</div>
+
+            {/* The Realistic Drawn Card Display */}
+            <div className="flex flex-col items-center gap-1 min-w-[90px]">
+              {drawnCard ? (
+                <div
+                  className={`w-16 h-24 rounded-xl bg-white border-2 border-slate-900 shadow-2xl flex flex-col justify-between p-2 font-black transition-all transform ${
+                    isFlippingCard ? "rotate-y-90 scale-95" : "scale-100"
+                  }`}
+                >
+                  <div className={`text-xs ${drawnCard.isRed ? "text-red-600" : "text-slate-950"}`}>
+                    {drawnCard.rank}
+                  </div>
+                  <div className={`text-2xl text-center ${drawnCard.isRed ? "text-red-600" : "text-slate-950"}`}>
+                    {drawnCard.symbol}
+                  </div>
+                  <div className={`text-xs text-right ${drawnCard.isRed ? "text-red-600" : "text-slate-950"}`}>
+                    {drawnCard.rank}
+                  </div>
+                </div>
+              ) : (
+                <div className="w-16 h-24 rounded-xl border-2 border-dashed border-slate-700 flex items-center justify-center text-xs text-slate-500 text-center px-1">
+                  Tira uma carta
+                </div>
+              )}
+              <span className="text-[10px] text-amber-400 font-bold">Carta Revelada</span>
+            </div>
+          </div>
         </div>
 
-        {/* 12 Side Obstacle Cards Row Display */}
-        <div className="border-t border-slate-800 pt-3">
-          <div className="text-xs text-slate-400 font-bold mb-2 flex items-center gap-2">
-            <span>🂠 12 Cartas Laterais da Pista (Fazem recuar os Áses ao serem ultrapassadas):</span>
-          </div>
-          <div className="grid grid-cols-12 gap-1 text-center text-xs">
-            {sideCards.map((sc, rowIdx) => (
+        {/* MAIN BOARD: LEFT COLUMN (6 Cards) - RACE TRACK - RIGHT COLUMN (6 Cards) */}
+        <div className="grid grid-cols-12 gap-3 items-center">
+          {/* Left Column (Rows 1..6) */}
+          <div className="col-span-2 space-y-2">
+            <div className="text-[10px] font-bold text-slate-400 text-center">Coluna Esquerda</div>
+            {leftColumnCards.map((card, idx) => (
               <div
-                key={rowIdx}
-                className={`h-11 rounded-md border flex flex-col items-center justify-center font-bold transition-all ${
-                  sc.flipped
-                    ? "bg-white text-slate-950 border-amber-400 shadow"
+                key={idx}
+                className={`h-10 rounded-lg border flex items-center justify-between px-2 font-black transition-all ${
+                  card.flipped
+                    ? "bg-white text-slate-950 border-amber-400 shadow-md"
                     : "bg-slate-800 text-slate-500 border-slate-700"
                 }`}
               >
-                <span className="text-[8px] opacity-50">#{rowIdx + 1}</span>
-                <span className="text-xs">
-                  {sc.flipped ? SUITS[sc.suitIdx].symbol : "🂠"}
-                </span>
+                <span className="text-[9px] opacity-60">#{idx + 1}</span>
+                {card.flipped ? (
+                  <span className={`text-xs ${SUITS[card.suitIdx].color}`}>
+                    {card.rank}{SUITS[card.suitIdx].symbol}
+                  </span>
+                ) : (
+                  <span className="text-xs">🂠</span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Center: 4 Aces Track Lanes */}
+          <div className="col-span-8 space-y-4">
+            {SUITS.map((s, idx) => {
+              const pos = positions[idx] || 0;
+              const isWinner = winner === s.id;
+
+              return (
+                <div key={s.id} className="space-y-1">
+                  <div className="flex justify-between text-xs font-bold px-1">
+                    <span className={s.color}>{s.name}</span>
+                    <span className="text-slate-400">Passo {pos}/12 {isWinner ? "🏆 VENCEDOR!" : ""}</span>
+                  </div>
+
+                  <div className="relative h-14 bg-slate-900 rounded-xl border-2 border-slate-700/80 flex items-center px-2 overflow-hidden shadow-inner">
+                    {/* 12 Step Grids */}
+                    <div className="absolute inset-0 grid grid-cols-12 border-slate-800/50">
+                      {Array.from({ length: 12 }).map((_, stepIdx) => (
+                        <div key={stepIdx} className="border-r border-slate-800/60" />
+                      ))}
+                    </div>
+
+                    {/* Physical Ace Playing Card Moving */}
+                    <div
+                      className="absolute transition-all duration-300 z-20 flex items-center"
+                      style={{ left: `${Math.max(1, (pos / TRACK_STEPS) * 88)}%` }}
+                    >
+                      <div className={`w-9 h-11 bg-white rounded-lg border-2 border-slate-950 shadow-2xl flex flex-col items-center justify-center font-black text-xs ${s.color} ring-2 ring-amber-400/50`}>
+                        <span>A</span>
+                        <span className="text-[9px] -mt-1">{s.symbol}</span>
+                      </div>
+                    </div>
+
+                    {/* Goal Finish Line */}
+                    <div className="absolute right-0 top-0 bottom-0 w-8 bg-red-600/90 border-l-2 border-dashed border-white flex items-center justify-center text-[10px] font-black text-white z-10 shadow">
+                      🏁
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Right Column (Rows 7..12) */}
+          <div className="col-span-2 space-y-2">
+            <div className="text-[10px] font-bold text-slate-400 text-center">Coluna Direita</div>
+            {rightColumnCards.map((card, idx) => (
+              <div
+                key={idx}
+                className={`h-10 rounded-lg border flex items-center justify-between px-2 font-black transition-all ${
+                  card.flipped
+                    ? "bg-white text-slate-950 border-amber-400 shadow-md"
+                    : "bg-slate-800 text-slate-500 border-slate-700"
+                }`}
+              >
+                <span className="text-[9px] opacity-60">#{idx + 7}</span>
+                {card.flipped ? (
+                  <span className={`text-xs ${SUITS[card.suitIdx].color}`}>
+                    {card.rank}{SUITS[card.suitIdx].symbol}
+                  </span>
+                ) : (
+                  <span className="text-xs">🂠</span>
+                )}
               </div>
             ))}
           </div>
@@ -366,9 +498,16 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
       {/* Betting Form & Active Bets */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Form */}
-        <Card className="border-border/60">
+        <Card className={`border-border/60 ${isBettingClosed ? "opacity-75" : ""}`}>
           <CardHeader>
-            <CardTitle className="text-lg">Fazer Aposta no Ás Vencedor</CardTitle>
+            <CardTitle className="text-lg flex justify-between items-center">
+              <span>Fazer Aposta no Ás Vencedor</span>
+              {isBettingClosed && (
+                <span className="text-xs bg-red-500/10 text-red-600 px-2 py-0.5 rounded-full font-bold">
+                  Apostas Fechadas
+                </span>
+              )}
+            </CardTitle>
             <CardDescription>
               Apostador: <span className="font-bold text-foreground">{currentName}</span>. Mínimo 0.5 penáltis.
             </CardDescription>
@@ -377,7 +516,11 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Seleciona o Ás</Label>
-                <Select value={horseNumber} onValueChange={(v) => setHorseNumber(v || "1")}>
+                <Select
+                  value={horseNumber}
+                  onValueChange={(v) => setHorseNumber(v || "1")}
+                  disabled={isBettingClosed}
+                >
                   <SelectTrigger>
                     {SUITS.find((s) => s.id.toString() === horseNumber)?.name || <SelectValue placeholder="Escolhe um Ás..." />}
                   </SelectTrigger>
@@ -399,6 +542,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
                   min="0.5"
                   value={amount}
                   onChange={(e) => setAmount(parseFloat(e.target.value) || 0.5)}
+                  disabled={isBettingClosed}
                   required
                 />
               </div>
@@ -406,9 +550,9 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
               <Button
                 type="submit"
                 className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2"
-                disabled={currentRace?.status !== "betting"}
+                disabled={isBettingClosed}
               >
-                <Sparkles className="w-4 h-4" /> Apostar como {currentName}! 🃏
+                <Sparkles className="w-4 h-4" /> {isBettingClosed ? "Apostas Fechadas" : `Apostar como ${currentName}! 🃏`}
               </Button>
             </CardContent>
           </form>
