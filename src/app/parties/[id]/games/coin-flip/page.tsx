@@ -23,8 +23,10 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
   const [amount, setAmount] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
 
-  // Spin State
+  // Spin Animation State
   const [spinningId, setSpinningId] = useState<string | null>(null);
+  const [activeResult, setActiveResult] = useState<{ result: "heads" | "tails"; winner: any; loser: any } | null>(null);
+  const [showModal, setShowModal] = useState(false);
 
   const loadData = async () => {
     try {
@@ -108,6 +110,8 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
 
   const handleSpinCoin = async (duelId: string) => {
     setSpinningId(duelId);
+    setShowModal(true);
+    setActiveResult(null);
 
     try {
       const res = await fetch(`/api/parties/${partyId}/games/coin-flip`, {
@@ -118,18 +122,25 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
 
       const data = await res.json();
 
+      // Spin for 3 seconds of high-suspense 3D animation
       setTimeout(() => {
         setSpinningId(null);
         if (!res.ok) {
           toast.error(data.error || "Erro ao girar moeda");
+          setShowModal(false);
           return;
         }
 
-        toast.success(`🎉 A moeda deu ${data.result === "heads" ? "CARA 👑" : "COROA ⚔️"}! Vencedor: ${data.winner?.name}!`);
+        setActiveResult({
+          result: data.result,
+          winner: data.winner,
+          loser: data.loser,
+        });
         loadData();
-      }, 1500);
+      }, 3000);
     } catch (e) {
       setSpinningId(null);
+      setShowModal(false);
       toast.error("Erro ao girar moeda");
     }
   };
@@ -140,6 +151,53 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto pb-12">
+      {/* 3D COIN SPINNING MODAL */}
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="max-w-md text-center p-8 border-2 border-amber-500/50 bg-gradient-to-b from-card via-card to-amber-500/10">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black text-center flex items-center justify-center gap-2">
+              <Coins className="w-7 h-7 text-amber-500 animate-spin" /> Moeda no Ar!
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-8 flex flex-col items-center justify-center min-h-[220px]">
+            {spinningId ? (
+              <div className="space-y-6">
+                {/* CSS 3D Coin Flip Animation */}
+                <div className="relative perspective-1000">
+                  <div className="w-36 h-36 rounded-full bg-gradient-to-tr from-amber-600 via-yellow-400 to-amber-200 border-8 border-amber-300 shadow-2xl flex items-center justify-center text-4xl font-black text-amber-950 animate-[spin_0.4s_linear_infinite] ring-8 ring-amber-500/20">
+                    👑
+                  </div>
+                </div>
+                <div className="text-base font-bold text-amber-600 animate-pulse">
+                  A girar no ar... Quem vai beber? 🍺
+                </div>
+              </div>
+            ) : activeResult ? (
+              <div className="space-y-4 animate-in zoom-in-95 duration-300">
+                <div className="w-36 h-36 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 border-8 border-amber-200 shadow-2xl mx-auto flex items-center justify-center text-4xl font-extrabold text-amber-950 ring-8 ring-amber-500/30">
+                  {activeResult.result === "heads" ? "👑 CARA" : "⚔️ COROA"}
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xl font-black text-emerald-600">
+                    🏆 Vencedor: {activeResult.winner?.name}!
+                  </div>
+                  <div className="text-sm font-bold text-red-500">
+                    🍺 {activeResult.loser?.name} tem de beber!
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {!spinningId && (
+            <Button onClick={() => setShowModal(false)} className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold h-11">
+              Fechar e Continuar 🎉
+            </Button>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href={`/parties/${partyId}/games`}>
@@ -251,7 +309,7 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
                     <Button
                       onClick={() => handleSpinCoin(d.id)}
                       disabled={isSpinning}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-11 gap-2"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-11 gap-2 shadow-lg"
                     >
                       {isSpinning ? <RotateCw className="w-5 h-5 animate-spin" /> : <Coins className="w-5 h-5" />}
                       {isSpinning ? "A girar a moeda..." : "GIRAR MOEDA AGORA! 🪙"}
