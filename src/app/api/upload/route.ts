@@ -4,6 +4,14 @@ import path from "path";
 import prisma from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
+  // Disable file uploads in production (Render has ephemeral filesystem)
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "Upload de ficheiros temporariamente indisponível em produção." },
+      { status: 503 }
+    );
+  }
+
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
