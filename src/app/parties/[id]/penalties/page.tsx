@@ -119,6 +119,7 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
   };
 
   const currentName = currentParticipant?.name || "Utilizador";
+  const selectedRecipient = participants.find((p) => p.id === toId);
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-12">
@@ -161,8 +162,14 @@ export default function PenaltiesPage({ params }: { params: Promise<{ id: string
               <div className="space-y-2">
                 <Label>Para Quem Recebe (Vai ter de beber)</Label>
                 <Select value={toId} onValueChange={(v) => setToId(v || "")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleciona quem vai beber..." />
+                  <SelectTrigger className="w-full">
+                    {selectedRecipient ? (
+                      <span className="font-bold text-foreground">
+                        {selectedRecipient.name} (Saldo: {selectedRecipient.penaltyBalance?.balance ?? 0})
+                      </span>
+                    ) : (
+                      <SelectValue placeholder="Seleciona quem vai beber..." />
+                    )}
                   </SelectTrigger>
                   <SelectContent>
                     {participants

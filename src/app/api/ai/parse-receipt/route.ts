@@ -28,9 +28,8 @@ export async function POST(req: NextRequest) {
 
     let rawText = textInput || "";
 
-    // 1. If Text input provided
+    // 1. Text Parsing with Gemini
     if (rawText) {
-      // If Gemini API Key exists, call Gemini for rich structured parsing
       if (apiKey) {
         try {
           const geminiRes = await fetch(
@@ -66,11 +65,10 @@ ${rawText}`,
         }
       }
 
-      // Fallback regex parsing if Gemini is not set or failed
+      // Regex fallback
       if (parsedItems.length === 0) {
         const lines = rawText.split("\n").filter((l) => l.trim().length > 0);
         for (const line of lines) {
-          // Match patterns like: "Vodka 5 garrafas 39.95" or "Cerveja 3x 44.85" or "Carne 1.5kg 12.50"
           const match = line.match(/^(.+?)\s+(?:(\d+(?:\.\d+)?)\s*(x|pack|packs|un|garrafas|kg|g|frasco|pacote)?\s+)?(?:(\d+(?:\.\d+)?)\s*€?)$/i);
           if (match) {
             const name = match[1].trim();
@@ -89,7 +87,6 @@ ${rawText}`,
               isAlcohol,
             });
           } else {
-            // Simple fallback line parser
             const parts = line.split(/\s+/);
             const price = parseFloat(parts[parts.length - 1]?.replace(",", "."));
             if (!isNaN(price) && parts.length > 1) {
@@ -108,59 +105,64 @@ ${rawText}`,
       }
     }
 
-    // 2. If Image file provided
+    // 2. Image Parsing with Gemini Vision
     if (file && parsedItems.length === 0) {
-      if (apiKey) {
-        try {
-          const buffer = await file.arrayBuffer();
-          const base64 = Buffer.from(buffer).toString("base64");
-          const mimeType = file.type || "image/jpeg";
+      if (!apiKey) {
+        return NextResponse.json({
+          error: "Para ler fotos de faturas com IA Vision, define a variável GEMINI_API_KEY no Render!",
+        }, { status: 400 });
+      }
 
-          const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [
-                  {
-                    parts: [
-                      {
-                        inline_data: {
-                          mime_type: mimeType,
-                          data: base64,
-                        },
+      try {
+        const buffer = await file.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString("base64");
+        const mimeType = file.type || "image/jpeg";
+
+        const geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      inline_data: {
+                        mime_type: mimeType,
+                        data: base64,
                       },
-                      {
-                        text: `Analisa a foto desta fatura/talão de compras. Extrai todos os itens comprados. Retorna APENAS um array JSON de objetos com: "name" (string), "quantity" (number), "unit" (string ex: "un", "kg", "garrafa"), "totalPrice" (number), "unitPrice" (number), "isAlcohol" (boolean).`,
-                      },
-                    ],
-                  },
-                ],
-              }),
-            }
-          );
-          const geminiData = await geminiRes.json();
-          const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (responseText) {
-            const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
-              parsedItems = JSON.parse(jsonMatch[0]);
-            }
+                    },
+                    {
+                      text: `Analisa a foto desta fatura/talão de compras. Extrai todos os itens comprados. Retorna APENAS um array JSON de objetos com: "name" (string), "quantity" (number), "unit" (string ex: "un", "kg", "garrafa"), "totalPrice" (number), "unitPrice" (number), "isAlcohol" (boolean).`,
+                    },
+                  ],
+                },
+              ],
+            }),
           }
-        } catch (e) {
-          console.error("Gemini Vision API error:", e);
+        );
+
+        const geminiData = await geminiRes.json();
+        const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (responseText) {
+          const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            parsedItems = JSON.parse(jsonMatch[0]);
+          }
         }
+      } catch (e) {
+        console.error("Gemini Vision API error:", e);
       }
     }
 
-    // Existing categories in this party for auto-matching
     const categories = await prisma.category.findMany({ where: { partyId } });
 
     return NextResponse.json({
       success: true,
       items: parsedItems,
       categories,
+      usingGeminiKey: !!apiKey,
     });
   } catch (error: any) {
     console.error("AI parse error:", error);

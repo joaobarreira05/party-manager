@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
-import { Trophy, ArrowLeft, Play, Sparkles, User, RefreshCw, Flag, Flame, Layers, Eye } from "lucide-react";
+import { Trophy, ArrowLeft, Play, Sparkles, User, RefreshCw, Layers, Eye } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ const SUITS = [
   { id: 4, name: "Ás de Copas ♥️", symbol: "♥️", color: "text-red-600", bg: "bg-red-600" },
 ];
 
-const TRACK_STEPS = 10; // 10 steps to win
+const TRACK_STEPS = 12; // Exactly 12 steps/cards as requested!
 
 export default function HorseRacePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -29,10 +29,10 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
   const [horseNumber, setHorseNumber] = useState("1");
   const [amount, setAmount] = useState(1);
 
-  // Positions of 4 Aces (0 to 10)
+  // Positions of 4 Aces (0 to 12)
   const [positions, setPositions] = useState<number[]>([0, 0, 0, 0]);
   
-  // Track obstacle cards for each row (10 rows)
+  // 12 Track obstacle cards for each row
   const [sideCards, setSideCards] = useState<{ suitIdx: number; flipped: boolean }[]>([]);
   const [drawnCard, setDrawnCard] = useState<{ suitIdx: number; name: string } | null>(null);
   const [autoPlaying, setAutoPlaying] = useState(false);
@@ -46,7 +46,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
         setCurrentRace(dataRace.currentRace);
         if (dataRace.currentRace.status === "finished") {
           setWinner(dataRace.currentRace.winnerHorse);
-          setPositions([10, 10, 10, 10]);
+          setPositions([12, 12, 12, 12]);
         }
       }
     } catch (e) {
@@ -60,7 +60,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
   }, [partyId]);
 
   const initTrackCards = () => {
-    // Generate 10 hidden side cards randomly from 4 suits
+    // Generate 12 hidden side cards randomly from 4 suits
     const cards = Array.from({ length: TRACK_STEPS }, () => ({
       suitIdx: Math.floor(Math.random() * 4),
       flipped: false,
@@ -111,7 +111,6 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
   const drawNextCard = (currentPos: number[], currentSide: { suitIdx: number; flipped: boolean }[]) => {
     if (winner) return { newPos: currentPos, newSide: currentSide, newWinner: winner };
 
-    // Pick random suit (0..3) to move forward 1 step
     const suitIdx = Math.floor(Math.random() * 4);
     const suitObj = SUITS[suitIdx];
 
@@ -136,7 +135,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
       }
     }
 
-    // Check if any Ace reached 10
+    // Check if any Ace reached 12
     let newWinner = null;
     for (let i = 0; i < 4; i++) {
       if (newPos[i] >= TRACK_STEPS) {
@@ -181,12 +180,12 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
         setAutoPlaying(false);
         finishRace(res.newWinner);
       }
-    }, 500);
+    }, 450);
   };
 
   const finishRace = async (winningHorse: number) => {
     setWinner(winningHorse);
-    toast.success(`🎉 O ${SUITS[winningHorse - 1].name} VENCEU A CORRIDA! Penáltis distribuídos!`);
+    toast.success(`🎉 O ${SUITS[winningHorse - 1].name} VENCEU A CORRIDA DE 12 CARTAS! Penáltis distribuídos!`);
 
     try {
       await fetch(`/api/parties/${partyId}/games/horse-race`, {
@@ -215,7 +214,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
       if (data.currentRace) {
         setCurrentRace(data.currentRace);
         initTrackCards();
-        toast.success("Nova Corrida de Áses aberta para apostas!");
+        toast.success("Nova Corrida de 12 Cartas aberta!");
       }
     } catch (e) {
       toast.error("Erro ao criar nova corrida");
@@ -233,10 +232,10 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
           </Link>
           <div>
             <h1 className="text-2xl font-extrabold flex items-center gap-2">
-              <Trophy className="w-6 h-6 text-amber-500" /> Corrida dos 4 Áses (Baralho de Cartas)
+              <Trophy className="w-6 h-6 text-amber-500" /> Corrida dos 4 Áses (12 Cartas da Pista)
             </h1>
             <p className="text-muted-foreground text-xs">
-              Sessão como <span className="font-bold text-foreground">{currentName}</span>. Cartas da pista viram-se e fazem recuar os Áses!
+              Sessão como <span className="font-bold text-foreground">{currentName}</span>. 12 Cartas laterais de obstáculo!
             </p>
           </div>
         </div>
@@ -252,7 +251,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
           <div>
             <div className="font-black text-lg text-amber-400 flex items-center gap-2">
-              <Layers className="w-5 h-5" /> Pista dos 4 Áses (10 Passos)
+              <Layers className="w-5 h-5" /> Pista de 12 Cartas Laterais
             </div>
             <div className="text-xs text-slate-400 mt-0.5">
               Cada carta tirada avança o Ás. Quando todos passam uma fila, a carta virada faz o respetivo Ás recuar 1 passo!
@@ -293,19 +292,18 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
           {SUITS.map((s, idx) => {
             const pos = positions[idx] || 0;
             const isWinner = winner === s.id;
-            const pct = (pos / TRACK_STEPS) * 100;
 
             return (
               <div key={s.id} className="space-y-1">
                 <div className="flex justify-between text-xs font-bold px-1">
                   <span className={s.color}>{s.name}</span>
-                  <span className="text-slate-400">Passo {pos}/10 {isWinner ? "🏆 VENCEDOR!" : ""}</span>
+                  <span className="text-slate-400">Passo {pos}/12 {isWinner ? "🏆 VENCEDOR!" : ""}</span>
                 </div>
 
                 <div className="relative h-14 bg-slate-900 rounded-xl border-2 border-slate-700/80 flex items-center px-2 overflow-hidden shadow-inner">
-                  {/* Step Grids */}
-                  <div className="absolute inset-0 grid grid-cols-10 border-slate-800/50">
-                    {Array.from({ length: 10 }).map((_, stepIdx) => {
+                  {/* 12 Step Grids */}
+                  <div className="absolute inset-0 grid grid-cols-12 border-slate-800/50">
+                    {Array.from({ length: 12 }).map((_, stepIdx) => {
                       const sideCard = sideCards[stepIdx];
                       return (
                         <div key={stepIdx} className="border-r border-slate-800/60 flex items-center justify-center relative">
@@ -322,16 +320,16 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
                   {/* Physical Ace Playing Card Moving */}
                   <div
                     className="absolute transition-all duration-300 z-20 flex items-center"
-                    style={{ left: `${Math.max(2, (pos / TRACK_STEPS) * 88)}%` }}
+                    style={{ left: `${Math.max(1, (pos / TRACK_STEPS) * 88)}%` }}
                   >
-                    <div className={`w-10 h-12 bg-white rounded-lg border-2 border-slate-950 shadow-2xl flex flex-col items-center justify-center font-black text-sm ${s.color} ring-2 ring-amber-400/50`}>
+                    <div className={`w-9 h-11 bg-white rounded-lg border-2 border-slate-950 shadow-2xl flex flex-col items-center justify-center font-black text-xs ${s.color} ring-2 ring-amber-400/50`}>
                       <span>A</span>
-                      <span className="text-[10px] -mt-1">{s.symbol}</span>
+                      <span className="text-[9px] -mt-1">{s.symbol}</span>
                     </div>
                   </div>
 
                   {/* Goal Finish Line */}
-                  <div className="absolute right-0 top-0 bottom-0 w-10 bg-red-600/90 border-l-2 border-dashed border-white flex items-center justify-center text-[10px] font-black text-white z-10 shadow">
+                  <div className="absolute right-0 top-0 bottom-0 w-9 bg-red-600/90 border-l-2 border-dashed border-white flex items-center justify-center text-[10px] font-black text-white z-10 shadow">
                     🏁
                   </div>
                 </div>
@@ -340,23 +338,23 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
           })}
         </div>
 
-        {/* Side Obstacle Cards Row Display */}
+        {/* 12 Side Obstacle Cards Row Display */}
         <div className="border-t border-slate-800 pt-3">
           <div className="text-xs text-slate-400 font-bold mb-2 flex items-center gap-2">
-            <span>🂠 Cartas de Obstáculo da Pista (Fazem recuar os Áses ao serem ultrapassadas):</span>
+            <span>🂠 12 Cartas Laterais da Pista (Fazem recuar os Áses ao serem ultrapassadas):</span>
           </div>
-          <div className="grid grid-cols-10 gap-1.5 text-center text-xs">
+          <div className="grid grid-cols-12 gap-1 text-center text-xs">
             {sideCards.map((sc, rowIdx) => (
               <div
                 key={rowIdx}
-                className={`h-12 rounded-lg border flex flex-col items-center justify-center font-bold transition-all ${
+                className={`h-11 rounded-md border flex flex-col items-center justify-center font-bold transition-all ${
                   sc.flipped
                     ? "bg-white text-slate-950 border-amber-400 shadow"
                     : "bg-slate-800 text-slate-500 border-slate-700"
                 }`}
               >
-                <span className="text-[9px] opacity-60">#{rowIdx + 1}</span>
-                <span className="text-sm">
+                <span className="text-[8px] opacity-50">#{rowIdx + 1}</span>
+                <span className="text-xs">
                   {sc.flipped ? SUITS[sc.suitIdx].symbol : "🂠"}
                 </span>
               </div>
@@ -381,7 +379,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
                 <Label>Seleciona o Ás</Label>
                 <Select value={horseNumber} onValueChange={(v) => setHorseNumber(v || "1")}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Escolhe um Ás..." />
+                    {SUITS.find((s) => s.id.toString() === horseNumber)?.name || <SelectValue placeholder="Escolhe um Ás..." />}
                   </SelectTrigger>
                   <SelectContent>
                     {SUITS.map((s) => (

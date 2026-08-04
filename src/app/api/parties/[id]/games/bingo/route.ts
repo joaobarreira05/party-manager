@@ -55,11 +55,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     if (action === "create_scratch_card") {
-      if (!participantId || !gameId || !Array.isArray(items) || items.length !== 25) {
-        return NextResponse.json({ error: "É necessário exatamente 25 frases para criar o cartão 5x5!" }, { status: 400 });
+      if (!participantId || !gameId || !Array.isArray(items) || items.length !== 9) {
+        return NextResponse.json({ error: "É necessário exatamente 9 frases para criar o cartão 3x3!" }, { status: 400 });
       }
 
-      // Check if existing card
       const existing = await prisma.bingoCard.findFirst({
         where: { gameId, participantId },
       });

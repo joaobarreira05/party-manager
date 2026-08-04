@@ -82,6 +82,8 @@ export function InventoryDialog({
     }
   };
 
+  const selectedCategoryObj = localCategories.find((c) => c.id === selectedCategory);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -109,7 +111,11 @@ export function InventoryDialog({
                   <div className="space-y-2">
                     <Select value={selectedCategory} onValueChange={(val) => setSelectedCategory(val ?? "none")}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Sem categoria" />
+                        {selectedCategory === "none" ? (
+                          <span>Sem categoria</span>
+                        ) : (
+                          <span>{selectedCategoryObj?.name || <SelectValue placeholder="Sem categoria" />}</span>
+                        )}
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Sem categoria</SelectItem>
