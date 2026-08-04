@@ -31,6 +31,7 @@ export function DashboardClient({ parties }: { parties: any[] }) {
     });
   };
 
+  
   const filteredParties = parties.filter((p) =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
