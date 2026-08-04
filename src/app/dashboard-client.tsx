@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/card";
 import { exportDatabaseToJson } from "./export-action";
 
-export function DashboardClient({ parties }: { parties: any[] }) {
+export function DashboardClient({ parties, isManager }: { parties: any[]; isManager?: boolean }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [isExporting, startExport] = useTransition();
 
@@ -31,7 +31,6 @@ export function DashboardClient({ parties }: { parties: any[] }) {
     });
   };
 
-  
   const filteredParties = parties.filter((p) =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -69,11 +68,13 @@ export function DashboardClient({ parties }: { parties: any[] }) {
           <p className="text-muted-foreground mb-6 max-w-sm mt-2">
             {searchQuery 
               ? "Não foram encontradas festas com esse nome." 
-              : "Comece por criar uma nova festa para gerir as suas despesas e inventário."}
+              : isManager
+              ? "Comece por criar uma nova festa para gerir as suas despesas e inventário."
+              : "Não há festas criadas ainda. A conta de Gestor cria as festas para a malta entrar!"}
           </p>
-          {!searchQuery && (
+          {!searchQuery && isManager && (
             <Link href="/parties/new">
-              <Button>
+              <Button className="bg-amber-600 hover:bg-amber-700 text-white font-bold">
                 <Plus className="mr-2 h-4 w-4" />
                 Criar Nova Festa
               </Button>

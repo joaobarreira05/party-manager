@@ -9,6 +9,7 @@ import { UserNav } from "@/components/user-nav";
 
 export default async function Home() {
   const session = await getSession();
+  const isManager = session?.role === "manager";
 
   const parties = await prisma.party.findMany({
     where: { deletedAt: null },
@@ -32,18 +33,20 @@ export default async function Home() {
           <div className="flex items-center gap-3">
             <UserNav session={session} />
             <ModeToggle />
-            <Link href="/parties/new">
-              <Button size="sm" className="font-semibold">
-                <Plus className="mr-1.5 h-4 w-4" />
-                Nova Festa
-              </Button>
-            </Link>
+            {isManager && (
+              <Link href="/parties/new">
+                <Button size="sm" className="font-semibold bg-amber-600 hover:bg-amber-700 text-white">
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Nova Festa
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-8 flex-1">
-        <DashboardClient parties={parties} />
+        <DashboardClient parties={parties} isManager={isManager} />
       </main>
     </div>
   );

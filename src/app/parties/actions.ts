@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 
 const partySchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
@@ -13,6 +14,13 @@ const partySchema = z.object({
 });
 
 export async function createParty(prevState: any, formData: FormData) {
+  const session = await getSession();
+
+  // Require manager role to create parties
+  if (session?.role !== "manager") {
+    return { error: "Apenas a conta de Gestor pode criar novas festas. Faz login como Gestor!" };
+  }
+
   const data = Object.fromEntries(formData.entries());
   
   const parsed = partySchema.safeParse(data);
@@ -36,6 +44,7 @@ export async function createParty(prevState: any, formData: FormData) {
     data: {
       name,
       accessPassword: accessPassword || null,
+      managerId: session.userId,
       startDate: startDate ? new Date(startDate) : null,
       endDate: endDate ? new Date(endDate) : null,
       categories: {
