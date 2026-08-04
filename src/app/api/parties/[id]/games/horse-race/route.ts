@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
+export const SUITS = [
+  { id: 1, name: "Ás de Espadas ♠️", suit: "spades", symbol: "♠️", color: "text-slate-900 font-black" },
+  { id: 2, name: "Ás de Ouros ♦️", suit: "diamonds", symbol: "♦️", color: "text-red-600 font-black" },
+  { id: 3, name: "Ás de Paus ♣️", suit: "clubs", symbol: "♣️", color: "text-slate-900 font-black" },
+  { id: 4, name: "Ás de Copas ♥️", suit: "hearts", symbol: "♥️", color: "text-red-600 font-black" },
+];
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: partyId } = await params;
@@ -69,7 +76,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ success: true, bet });
     }
 
-    if (action === "start_race") {
+    if (action === "finish_race") {
+      const { winningHorse } = await req.json();
+
       const race = await prisma.horseRace.findUnique({
         where: { id: raceId },
         include: { bets: { include: { participant: true } } },
@@ -79,20 +88,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Corrida não encontrada" }, { status: 404 });
       }
 
-      // 4 horses only (1..4)
-      const winningHorse = Math.floor(Math.random() * 4) + 1;
-
       const updatedRace = await prisma.horseRace.update({
         where: { id: raceId },
         data: {
           status: "finished",
-          winnerHorse: winningHorse,
+          winnerHorse: Number(winningHorse),
         },
         include: { bets: { include: { participant: true } } },
       });
 
+      // Settle bets
       for (const b of race.bets) {
-        const won = b.horseNumber === winningHorse;
+        const won = b.horseNumber === Number(winningHorse);
         if (won) {
           await prisma.penaltyBalance.upsert({
             where: { participantId: b.participantId },
@@ -111,7 +118,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               partyId,
               toId: b.participantId,
               amount: b.amount,
-              reason: `Perdeu na Corrida de Cavalos (Cavalo #${b.horseNumber})`,
+              reason: `Perdeu na Corrida de Áses (Ás #${b.horseNumber})`,
               status: "pending",
               confirmationsNeeded: 3,
             },
@@ -139,6 +146,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     return NextResponse.json({ error: "Ação não suportada" }, { status: 400 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Erro na corrida de cavalos" }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Erro na corrida de cartas" }, { status: 500 });
   }
 }
