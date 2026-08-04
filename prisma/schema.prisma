@@ -7,61 +7,94 @@ datasource db {
   provider = "sqlite"
 }
 
-model Party {
+model User {
   id           String        @id @default(uuid())
-  name         String
-  startDate    DateTime?
-  endDate      DateTime?
-  participants Participant[]
-  categories   Category[]
-  inventory    InventoryItem[]
-  events       Event[]
-  expenses     Expense[]
-  receipts     Receipt[]
+  username     String        @unique
+  passwordHash String
+  role         String        @default("user") // "manager" | "user"
   createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  deletedAt    DateTime?     // For undo support
+  
+  managedParties Party[]     @relation("PartyManager")
+  participants   Participant[]
+}
+
+model Party {
+  id                  String               @id @default(uuid())
+  name                String
+  accessPassword      String?              // Password required for normal users to join
+  managerId           String?
+  manager             User?                @relation("PartyManager", fields: [managerId], references: [id])
+  startDate           DateTime?
+  endDate             DateTime?
+  participants        Participant[]
+  categories          Category[]
+  inventory           InventoryItem[]
+  events              Event[]
+  expenses            Expense[]
+  receipts            Receipt[]
+  coinFlips           CoinFlip[]
+  horseRaces          HorseRace[]
+  bingoGames          BingoGame[]
+  challenges          Challenge[]
+  penaltyTransactions PenaltyTransaction[]
+  drinkConfirmations  DrinkConfirmation[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?            // For undo support
 }
 
 model Participant {
-  id                 String             @id @default(uuid())
-  name               String
-  color              String?
-  notes              String?
-  partyId            String
-  party              Party              @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  id                  String               @id @default(uuid())
+  name                String
+  color               String?
+  notes               String?
+  userId              String?
+  user                User?                @relation(fields: [userId], references: [id])
+  partyId             String
+  party               Party                @relation(fields: [partyId], references: [id], onDelete: Cascade)
   eventParticipations EventParticipant[]
-  expenseShares      ExpenseParticipant[]
-  expensesPaid       Expense[]          @relation("ExpensePayer")
-  createdAt          DateTime           @default(now())
+  expenseShares       ExpenseParticipant[]
+  expensesPaid        Expense[]            @relation("ExpensePayer")
+  coinFlipBets        CoinFlipBet[]
+  horseRaceBets       HorseRaceBet[]
+  bingoCards          BingoCard[]
+  createdChallenges   Challenge[]          @relation("ChallengeCreator")
+  wonChallenges       Challenge[]          @relation("ChallengeWinner")
+  challengeBets       ChallengeBet[]
+  penaltyBalance      PenaltyBalance?
+  sentPenalties       PenaltyTransaction[] @relation("PenaltySender")
+  receivedPenalties   PenaltyTransaction[] @relation("PenaltyReceiver")
+  drinksToConfirm     DrinkConfirmation[]  @relation("DrinkSubject")
+  drinksConfirmed     DrinkConfirmation[]  @relation("DrinkConfirmer")
+  createdAt           DateTime             @default(now())
 }
 
 model Category {
-  id        String    @id @default(uuid())
+  id        String          @id @default(uuid())
   name      String
-  isAlcohol Boolean   @default(false)
+  isAlcohol Boolean         @default(false)
   partyId   String
-  party     Party     @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  party     Party           @relation(fields: [partyId], references: [id], onDelete: Cascade)
   inventory InventoryItem[]
   expenses  Expense[]
 }
 
 model InventoryItem {
-  id               String      @id @default(uuid())
-  name             String
-  categoryId       String?
-  category         Category?   @relation(fields: [categoryId], references: [id])
-  unit             String
-  initialQuantity  Float
+  id                String      @id @default(uuid())
+  name              String
+  categoryId        String?
+  category          Category?   @relation(fields: [categoryId], references: [id])
+  unit              String
+  initialQuantity   Float
   remainingQuantity Float
-  totalPrice       Float
-  unitPrice        Float       // Computed: totalPrice / initialQuantity
-  notes            String?
-  partyId          String
-  party            Party       @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  receiptId        String?
-  receipt          Receipt?    @relation(fields: [receiptId], references: [id])
-  eventUsages      EventItem[]
+  totalPrice        Float
+  unitPrice         Float       // Computed: totalPrice / initialQuantity
+  notes             String?
+  partyId           String
+  party             Party       @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  receiptId         String?
+  receipt           Receipt?    @relation(fields: [receiptId], references: [id])
+  eventUsages       EventItem[]
 }
 
 model Event {
@@ -80,6 +113,7 @@ model EventParticipant {
   participantId String
   event         Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
   participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
   @@id([eventId, participantId])
 }
 
@@ -89,6 +123,7 @@ model EventItem {
   quantityUsed    Float
   event           Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
   @@id([eventId, inventoryItemId])
 }
 
@@ -108,9 +143,10 @@ model Expense {
 model ExpenseParticipant {
   expenseId     String
   participantId String
-  amountOwed    Float?    // If null, divide equally
-  expense       Expense     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
-  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  amountOwed    Float?              // If null, divide equally
+  expense       Expense             @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  participant   Participant         @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
   @@id([expenseId, participantId])
 }
 
@@ -124,4 +160,138 @@ model Receipt {
   party     Party           @relation(fields: [partyId], references: [id], onDelete: Cascade)
   items     InventoryItem[]
   createdAt DateTime        @default(now())
+}
+
+// ----------------------------------------------------
+// GAMES & BETTING
+// ----------------------------------------------------
+
+model CoinFlip {
+  id        String        @id @default(uuid())
+  partyId   String
+  party     Party         @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  result    String?       // "heads" | "tails"
+  createdAt DateTime      @default(now())
+  bets      CoinFlipBet[]
+}
+
+model CoinFlipBet {
+  id            String      @id @default(uuid())
+  coinFlipId    String
+  coinFlip      CoinFlip    @relation(fields: [coinFlipId], references: [id], onDelete: Cascade)
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  choice        String      // "heads" | "tails"
+  amount        Float       // penáltis apostados
+  createdAt     DateTime    @default(now())
+}
+
+model HorseRace {
+  id          String         @id @default(uuid())
+  partyId     String
+  party       Party          @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  status      String         @default("betting") // "betting" | "racing" | "finished"
+  winnerHorse Int?           // horse number (1-6)
+  createdAt   DateTime       @default(now())
+  bets        HorseRaceBet[]
+}
+
+model HorseRaceBet {
+  id            String      @id @default(uuid())
+  raceId        String
+  race          HorseRace   @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  horseNumber   Int
+  amount        Float
+  createdAt     DateTime    @default(now())
+}
+
+model BingoGame {
+  id           String      @id @default(uuid())
+  partyId      String
+  party        Party       @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  status       String      @default("waiting") // "waiting" | "playing" | "finished"
+  drawnNumbers String      @default("[]")      // JSON array of drawn numbers
+  entryFee     Float       @default(0)
+  createdAt    DateTime    @default(now())
+  cards        BingoCard[]
+}
+
+model BingoCard {
+  id            String      @id @default(uuid())
+  gameId        String
+  game          BingoGame   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  numbers       String      // JSON 5x5 grid
+  markedNumbers String      @default("[]") // JSON array of marked numbers
+  createdAt     DateTime    @default(now())
+}
+
+model Challenge {
+  id          String         @id @default(uuid())
+  partyId     String
+  party       Party          @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   Participant    @relation("ChallengeCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  description String
+  status      String         @default("open") // "open" | "active" | "resolved"
+  winnerId    String?
+  winner      Participant?   @relation("ChallengeWinner", fields: [winnerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+  bets        ChallengeBet[]
+}
+
+model ChallengeBet {
+  id            String      @id @default(uuid())
+  challengeId   String
+  challenge     Challenge   @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  amount        Float
+  prediction    String?
+  createdAt     DateTime    @default(now())
+}
+
+// ----------------------------------------------------
+// PENALTIES SYSTEM
+// ----------------------------------------------------
+
+model PenaltyBalance {
+  id            String      @id @default(uuid())
+  participantId String      @unique
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  balance       Float       @default(0) // negative = owes penalties (min -5)
+}
+
+model PenaltyTransaction {
+  id                  String              @id @default(uuid())
+  partyId             String
+  party               Party               @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  fromId              String?             // null = system (game penalty)
+  from                Participant?        @relation("PenaltySender", fields: [fromId], references: [id], onDelete: Cascade)
+  toId                String
+  to                  Participant         @relation("PenaltyReceiver", fields: [toId], references: [id], onDelete: Cascade)
+  amount              Float
+  reason              String              // "game_loss", "challenge_bet", "penalty_transfer", "drink_cleared"
+  status              String              @default("pending") // "pending" | "cleared"
+  confirmationsNeeded Int                 @default(3)
+  createdAt           DateTime            @default(now())
+  confirmations       DrinkConfirmation[]
+}
+
+model DrinkConfirmation {
+  id            String             @id @default(uuid())
+  partyId       String
+  party         Party              @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  participantId String             // Who drank
+  participant   Participant        @relation("DrinkSubject", fields: [participantId], references: [id], onDelete: Cascade)
+  confirmedById String             // Who confirmed
+  confirmedBy   Participant        @relation("DrinkConfirmer", fields: [confirmedById], references: [id], onDelete: Cascade)
+  transactionId String
+  transaction   PenaltyTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime           @default(now())
+
+  @@unique([transactionId, confirmedById])
 }
