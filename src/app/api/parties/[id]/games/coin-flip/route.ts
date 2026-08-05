@@ -33,7 +33,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Escolha o participante, a aposta e Cara/Coroa" }, { status: 400 });
       }
 
-      // Check penalty balance - limit -5
       const pBalance = await prisma.penaltyBalance.findUnique({ where: { participantId } });
       const currentBal = pBalance?.balance || 0;
       if (currentBal - amount < -5) {
@@ -59,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ success: true, duel });
     }
 
-    // 2. Join an existing 1v1 Duel Room
+    // 2. Join and Automatically Resolve 1v1 Duel
     if (action === "join_duel") {
       if (!participantId || !coinFlipId) {
         return NextResponse.json({ error: "ID do duelo e participante são necessários" }, { status: 400 });
@@ -79,16 +78,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Não podes jogar contra ti próprio!" }, { status: 400 });
       }
 
-      // Opponent gets the opposite side
       const opponentChoice = creatorBet.choice === "heads" ? "tails" : "heads";
 
-      // Check penalty balance for joiner
       const pBalance = await prisma.penaltyBalance.findUnique({ where: { participantId } });
       const currentBal = pBalance?.balance || 0;
       if (currentBal - creatorBet.amount < -5) {
         return NextResponse.json({ error: "Saldo insuficiente para aceitar o duelo!" }, { status: 400 });
       }
 
+      // Random Coin Flip Result ("heads" or "tails")
+      const result = Math.random() < 0.5 ? "heads" : "tails";
+
+      // Add opponent bet and mark duel result as finished
       await prisma.coinFlipBet.create({
         data: {
           coinFlipId,
@@ -97,29 +98,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           amount: creatorBet.amount,
         },
       });
-
-      const updatedDuel = await prisma.coinFlip.findUnique({
-        where: { id: coinFlipId },
-        include: { bets: { include: { participant: true } } },
-      });
-
-      return NextResponse.json({ success: true, duel: updatedDuel });
-    }
-
-    // 3. Spin Coin to Resolve Duel
-    if (action === "spin") {
-      if (!coinFlipId) return NextResponse.json({ error: "ID do duelo é necessário" }, { status: 400 });
-
-      const duel = await prisma.coinFlip.findUnique({
-        where: { id: coinFlipId },
-        include: { bets: { include: { participant: true } } },
-      });
-
-      if (!duel) return NextResponse.json({ error: "Duelo não encontrado" }, { status: 404 });
-      if (duel.result) return NextResponse.json({ error: "Este duelo já foi resolvido!" }, { status: 400 });
-      if (duel.bets.length < 2) return NextResponse.json({ error: "É necessário 2 jogadores para girar a moeda!" }, { status: 400 });
-
-      const result = Math.random() < 0.5 ? "heads" : "tails";
 
       const updatedDuel = await prisma.coinFlip.update({
         where: { id: coinFlipId },
@@ -131,14 +109,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const loserBet = updatedDuel.bets.find((b) => b.choice !== result);
 
       if (winnerBet && loserBet) {
-        // Winner gains penalty points (+amount)
         await prisma.penaltyBalance.upsert({
           where: { participantId: winnerBet.participantId },
           update: { balance: { increment: winnerBet.amount } },
           create: { participantId: winnerBet.participantId, balance: winnerBet.amount },
         });
 
-        // Loser loses penalty (-amount) and gets pending drink transaction
         await prisma.penaltyBalance.upsert({
           where: { participantId: loserBet.participantId },
           update: { balance: { decrement: loserBet.amount } },
