@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import { Trophy, ArrowLeft, Play, Sparkles, User, RefreshCw, Layers, Eye, ShieldAlert, Lock } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,12 +34,28 @@ interface DrawnCardInfo {
   isRed: boolean;
 }
 
+interface RaceBet {
+  id: string;
+  horseNumber: number;
+  amount: number;
+  participant?: {
+    name: string;
+  };
+}
+
+interface RaceData {
+  id: string;
+  status: string;
+  winnerHorse?: number;
+  bets?: RaceBet[];
+}
+
 export default function HorseRacePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const partyId = resolvedParams.id;
   const { currentParticipant } = useActiveParticipant(partyId);
 
-  const [currentRace, setCurrentRace] = useState<any>(null);
+  const [currentRace, setCurrentRace] = useState<RaceData | null>(null);
   const [horseNumber, setHorseNumber] = useState("1");
   const [amount, setAmount] = useState(1);
 
@@ -60,7 +76,23 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
   const activeParticipantId = currentParticipant?.participantId;
   const currentName = currentParticipant?.name || "Utilizador";
 
-  const loadData = async () => {
+  const getRandomCard = useCallback((): TrackCard => ({
+    suitIdx: Math.floor(Math.random() * 4),
+    rank: RANKS[Math.floor(Math.random() * RANKS.length)],
+    flipped: false,
+  }), []);
+
+  const initTrackCards = useCallback(() => {
+    const left = Array.from({ length: 6 }, () => getRandomCard());
+    const right = Array.from({ length: 6 }, () => getRandomCard());
+    setLeftColumnCards(left);
+    setRightColumnCards(right);
+    setPositions([0, 0, 0, 0]);
+    setWinner(null);
+    setDrawnCard(null);
+  }, [getRandomCard]);
+
+  const loadData = useCallback(async () => {
     try {
       const resRace = await fetch(`/api/parties/${partyId}/games/horse-race`);
       const dataRace = await resRace.json();
@@ -71,31 +103,15 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
           setPositions([12, 12, 12, 12]);
         }
       }
-    } catch (e) {
+    } catch {
       toast.error("Erro ao carregar corrida de cartas");
     }
-  };
+  }, [partyId]);
 
   useEffect(() => {
     loadData();
     initTrackCards();
-  }, [partyId]);
-
-  const getRandomCard = (): TrackCard => ({
-    suitIdx: Math.floor(Math.random() * 4),
-    rank: RANKS[Math.floor(Math.random() * RANKS.length)],
-    flipped: false,
-  });
-
-  const initTrackCards = () => {
-    const left = Array.from({ length: 6 }, () => getRandomCard());
-    const right = Array.from({ length: 6 }, () => getRandomCard());
-    setLeftColumnCards(left);
-    setRightColumnCards(right);
-    setPositions([0, 0, 0, 0]);
-    setWinner(null);
-    setDrawnCard(null);
-  };
+  }, [loadData, initTrackCards]);
 
   const handlePlaceBet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,7 +145,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
 
       toast.success(`Aposta registada como ${currentName}! 🃏`);
       loadData();
-    } catch (e) {
+    } catch {
       toast.error("Erro ao apostar");
     }
   };
@@ -143,8 +159,8 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
           body: JSON.stringify({ action: "lock_bets", raceId: currentRace.id }),
         });
         setCurrentRace({ ...currentRace, status: "racing" });
-      } catch (e) {
-        console.error("Error locking bets:", e);
+      } catch (err) {
+        console.error("Error locking bets:", err);
       }
     }
   };
@@ -271,13 +287,13 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "finish_race",
-          raceId: currentRace.id,
+          raceId: currentRace?.id,
           winningHorse,
         }),
       });
       loadData();
-    } catch (e) {
-      console.error("Error finishing race:", e);
+    } catch (err) {
+      console.error("Error finishing race:", err);
     }
   };
 
@@ -298,7 +314,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
         initTrackCards();
         toast.success("Nova Corrida de Cartas aberta pelo Gestor!");
       }
-    } catch (e) {
+    } catch {
       toast.error("Erro ao criar nova corrida");
     }
   };
@@ -581,7 +597,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
             {!currentRace?.bets || currentRace.bets.length === 0 ? (
               <div className="text-center py-8 text-xs text-muted-foreground">Ainda não há apostas nesta corrida.</div>
             ) : (
-              currentRace.bets.map((b: any) => (
+              currentRace.bets.map((b) => (
                 <div key={b.id} className="flex items-center justify-between p-3 border rounded-lg bg-card text-sm">
                   <div className="font-semibold">{b.participant?.name}</div>
                   <div className="flex items-center gap-2">

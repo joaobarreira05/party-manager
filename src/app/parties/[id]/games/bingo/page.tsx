@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import { Dices, ArrowLeft, RefreshCw, Sparkles, Check, Edit3, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,34 +23,30 @@ const DEFAULT_9_IDEAS = [
   "Telemóvel perdido 📱",
 ];
 
+interface BingoGameData {
+  id: string;
+  status: string;
+}
+
+interface BingoCardData {
+  id: string;
+  numbers: string;
+  markedNumbers: string;
+}
+
 export default function BingoPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const partyId = resolvedParams.id;
   const { currentParticipant } = useActiveParticipant(partyId);
 
-  const [game, setGame] = useState<any>(null);
-  const [card, setCard] = useState<any>(null);
+  const [game, setGame] = useState<BingoGameData | null>(null);
+  const [card, setCard] = useState<BingoCardData | null>(null);
 
   // 9 Slots Editor
   const [items9, setItems9] = useState<string[]>(DEFAULT_9_IDEAS);
   const [editorOpen, setEditorOpen] = useState(false);
 
-  const loadData = async () => {
-    try {
-      const resG = await fetch(`/api/parties/${partyId}/games/bingo`);
-      const dataG = await resG.json();
-      if (dataG.game) {
-        setGame(dataG.game);
-        if (currentParticipant?.participantId) {
-          fetchCard(dataG.game.id, currentParticipant.participantId);
-        }
-      }
-    } catch (e) {
-      toast.error("Erro ao carregar Bingo");
-    }
-  };
-
-  const fetchCard = async (gameId: string, pId: string) => {
+  const fetchCard = useCallback(async (gameId: string, pId: string) => {
     try {
       const res = await fetch(`/api/parties/${partyId}/games/bingo`, {
         method: "POST",
@@ -63,14 +59,29 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
         const parsed: string[] = JSON.parse(data.card.numbers || "[]");
         if (parsed.length === 9) setItems9(parsed);
       }
-    } catch (e) {
+    } catch {
       toast.error("Erro ao carregar cartão");
     }
-  };
+  }, [partyId]);
+
+  const loadData = useCallback(async () => {
+    try {
+      const resG = await fetch(`/api/parties/${partyId}/games/bingo`);
+      const dataG = await resG.json();
+      if (dataG.game) {
+        setGame(dataG.game);
+        if (currentParticipant?.participantId) {
+          fetchCard(dataG.game.id, currentParticipant.participantId);
+        }
+      }
+    } catch {
+      toast.error("Erro ao carregar Bingo");
+    }
+  }, [partyId, currentParticipant?.participantId, fetchCard]);
 
   useEffect(() => {
     loadData();
-  }, [partyId, currentParticipant?.participantId]);
+  }, [loadData]);
 
   const activeParticipantId = currentParticipant?.participantId;
   const currentName = currentParticipant?.name || "Utilizador";
@@ -101,7 +112,7 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
         setEditorOpen(false);
         toast.success("O teu Cartão 3x3 foi criado com sucesso! 🎉");
       }
-    } catch (e) {
+    } catch {
       toast.error("Erro ao guardar cartão 3x3");
     }
   };
@@ -130,7 +141,7 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
           }
         }
       }
-    } catch (e) {
+    } catch {
       toast.error("Erro ao marcar posição");
     }
   };
@@ -148,7 +159,7 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
         setCard(null);
         toast.success("Novo Bingo 3x3 iniciado!");
       }
-    } catch (e) {
+    } catch {
       toast.error("Erro ao reiniciar Bingo");
     }
   };
@@ -243,7 +254,7 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
               <Dices className="w-12 h-12 text-purple-400 mx-auto animate-bounce" />
               <div className="font-bold text-lg text-foreground">Ainda não criaste o teu Cartão 3x3!</div>
               <p className="text-xs max-w-md mx-auto">
-                Clica no botão <span className="font-bold text-purple-600">"Criar Cartão 3x3"</span> para preencheres as tuas 9 posições da noite!
+                Clica no botão <span className="font-bold text-purple-600">&quot;Criar Cartão 3x3&quot;</span> para preencheres as tuas 9 posições da noite!
               </p>
               <Button onClick={() => setEditorOpen(true)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold gap-2">
                 <Plus className="w-4 h-4" /> Preencher o meu Cartão 3x3 Agora
@@ -251,7 +262,6 @@ export default function BingoPage({ params }: { params: Promise<{ id: string }> 
             </div>
           ) : (
             <div className="space-y-4">
-              {/* 3x3 Grid */}
               <div className="grid grid-cols-3 gap-3">
                 {grid.map((actText, idx) => {
                   const isDone = marked.includes(actText);

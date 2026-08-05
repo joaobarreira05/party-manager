@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import { Coins, ArrowLeft, RotateCw, Sparkles, Swords, Trophy, Plus, UserCheck } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,12 +11,29 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useActiveParticipant } from "@/lib/use-active-participant";
 import { toast } from "sonner";
 
+interface BetItem {
+  id: string;
+  participantId: string;
+  choice: string;
+  amount: number;
+  participant?: {
+    name: string;
+  };
+}
+
+interface DuelItem {
+  id: string;
+  result?: string;
+  createdAt: string;
+  bets?: BetItem[];
+}
+
 export default function CoinFlipPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const partyId = resolvedParams.id;
   const { currentParticipant } = useActiveParticipant(partyId);
 
-  const [duels, setDuels] = useState<any[]>([]);
+  const [duels, setDuels] = useState<DuelItem[]>([]);
 
   // Create Duel State
   const [choice, setChoice] = useState<"heads" | "tails">("heads");
@@ -25,22 +42,22 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
 
   // Spin Animation State
   const [spinningId, setSpinningId] = useState<string | null>(null);
-  const [activeResult, setActiveResult] = useState<{ result: "heads" | "tails"; winner: any; loser: any } | null>(null);
+  const [activeResult, setActiveResult] = useState<{ result: "heads" | "tails"; winner?: { name: string }; loser?: { name: string } } | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const resD = await fetch(`/api/parties/${partyId}/games/coin-flip`);
       const dataD = await resD.json();
       if (dataD.coinFlips) setDuels(dataD.coinFlips);
-    } catch (e) {
+    } catch {
       toast.error("Erro ao carregar duelos");
     }
-  };
+  }, [partyId]);
 
   useEffect(() => {
     loadData();
-  }, [partyId]);
+  }, [loadData]);
 
   const activeParticipantId = currentParticipant?.participantId;
   const currentName = currentParticipant?.name || "Utilizador";
@@ -73,7 +90,7 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
       toast.success("Duelo 1v1 criado! Espera que um amigo aceite a aposta. ⚔️");
       setCreateOpen(false);
       loadData();
-    } catch (e) {
+    } catch {
       toast.error("Erro de ligação");
     }
   };
@@ -101,103 +118,27 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
         return;
       }
 
-      toast.success("Entraste no duelo! Podem girar a moeda! 🪙");
-      loadData();
-    } catch (e) {
-      toast.error("Erro de ligação");
+      toast.success("Aceitaste o duelo! A rodar a moeda... 🪙");
+      startSpinAnimation(duelId, data.result, data.winner, data.loser);
+    } catch {
+      toast.error("Erro ao entrar no duelo");
     }
   };
 
-  const handleSpinCoin = async (duelId: string) => {
+  const startSpinAnimation = (duelId: string, result: "heads" | "tails", winner?: { name: string }, loser?: { name: string }) => {
     setSpinningId(duelId);
     setShowModal(true);
     setActiveResult(null);
 
-    try {
-      const res = await fetch(`/api/parties/${partyId}/games/coin-flip`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "spin", coinFlipId: duelId }),
-      });
-
-      const data = await res.json();
-
-      // Spin for 3 seconds of high-suspense 3D animation
-      setTimeout(() => {
-        setSpinningId(null);
-        if (!res.ok) {
-          toast.error(data.error || "Erro ao girar moeda");
-          setShowModal(false);
-          return;
-        }
-
-        setActiveResult({
-          result: data.result,
-          winner: data.winner,
-          loser: data.loser,
-        });
-        loadData();
-      }, 3000);
-    } catch (e) {
+    setTimeout(() => {
       setSpinningId(null);
-      setShowModal(false);
-      toast.error("Erro ao girar moeda");
-    }
+      setActiveResult({ result, winner, loser });
+      loadData();
+    }, 2800);
   };
 
-  const openDuels = duels.filter((d) => !d.result && d.bets?.length === 1);
-  const readyDuels = duels.filter((d) => !d.result && d.bets?.length === 2);
-  const finishedDuels = duels.filter((d) => d.result);
-
   return (
-    <div className="space-y-8 max-w-4xl mx-auto pb-12">
-      {/* 3D COIN SPINNING MODAL */}
-      <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="max-w-md text-center p-8 border-2 border-amber-500/50 bg-gradient-to-b from-card via-card to-amber-500/10">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black text-center flex items-center justify-center gap-2">
-              <Coins className="w-7 h-7 text-amber-500 animate-spin" /> Moeda no Ar!
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="py-8 flex flex-col items-center justify-center min-h-[220px]">
-            {spinningId ? (
-              <div className="space-y-6">
-                {/* CSS 3D Coin Flip Animation */}
-                <div className="relative perspective-1000">
-                  <div className="w-36 h-36 rounded-full bg-gradient-to-tr from-amber-600 via-yellow-400 to-amber-200 border-8 border-amber-300 shadow-2xl flex items-center justify-center text-4xl font-black text-amber-950 animate-[spin_0.4s_linear_infinite] ring-8 ring-amber-500/20">
-                    👑
-                  </div>
-                </div>
-                <div className="text-base font-bold text-amber-600 animate-pulse">
-                  A girar no ar... Quem vai beber? 🍺
-                </div>
-              </div>
-            ) : activeResult ? (
-              <div className="space-y-4 animate-in zoom-in-95 duration-300">
-                <div className="w-36 h-36 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 border-8 border-amber-200 shadow-2xl mx-auto flex items-center justify-center text-4xl font-extrabold text-amber-950 ring-8 ring-amber-500/30">
-                  {activeResult.result === "heads" ? "👑 CARA" : "⚔️ COROA"}
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xl font-black text-emerald-600">
-                    🏆 Vencedor: {activeResult.winner?.name}!
-                  </div>
-                  <div className="text-sm font-bold text-red-500">
-                    🍺 {activeResult.loser?.name} tem de beber!
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-
-          {!spinningId && (
-            <Button onClick={() => setShowModal(false)} className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold h-11">
-              Fechar e Continuar 🎉
-            </Button>
-          )}
-        </DialogContent>
-      </Dialog>
-
+    <div className="space-y-8 max-w-5xl mx-auto pb-12">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href={`/parties/${partyId}/games`}>
@@ -207,54 +148,49 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
           </Link>
           <div>
             <h1 className="text-2xl font-extrabold flex items-center gap-2">
-              <Swords className="w-6 h-6 text-amber-500" /> Duelos de Moeda 1v1
+              <Coins className="w-6 h-6 text-amber-500" /> Duelos 1v1 da Moeda
             </h1>
             <p className="text-muted-foreground text-xs">
-              Sessão como <span className="font-bold text-foreground">{currentName}</span>. Cria um duelo 1v1 contra um amigo!
+              Sessão como <span className="font-bold text-foreground">{currentName}</span>. Desafia um amigo para um duelo de penáltis!
             </p>
           </div>
         </div>
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger
-            render={
-              <Button className="bg-amber-600 hover:bg-amber-700 text-white font-bold gap-2">
-                <Plus className="w-4 h-4" /> Criar Duelo 1v1
-              </Button>
-            }
-          />
+          <DialogTrigger render={<Button className="bg-amber-600 hover:bg-amber-700 text-white font-bold gap-2" />}>
+            <Plus className="w-4 h-4" /> Criar Duelo 1v1
+          </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Criar Novo Duelo 1v1</DialogTitle>
-              <DialogDescription>
-                Criador: <span className="font-bold text-foreground">{currentName}</span>. Escolhe o teu lado e a aposta.
-              </DialogDescription>
+              <DialogTitle>Criar Duelo 1v1 de Cara ou Coroa</DialogTitle>
+              <DialogDescription>Aposta penáltis contra outro participante da festa.</DialogDescription>
             </DialogHeader>
+
             <form onSubmit={handleCreateDuel} className="space-y-4 pt-2">
               <div className="space-y-2">
-                <Label>A Tua Escolha</Label>
+                <Label>A tua escolha</Label>
                 <div className="grid grid-cols-2 gap-3">
                   <Button
                     type="button"
                     variant={choice === "heads" ? "default" : "outline"}
-                    className={choice === "heads" ? "bg-amber-600 text-white font-bold" : ""}
+                    className={choice === "heads" ? "bg-amber-600 hover:bg-amber-700 font-bold" : ""}
                     onClick={() => setChoice("heads")}
                   >
-                    👑 CARA
+                    👑 Cara (Heads)
                   </Button>
                   <Button
                     type="button"
                     variant={choice === "tails" ? "default" : "outline"}
-                    className={choice === "tails" ? "bg-amber-600 text-white font-bold" : ""}
+                    className={choice === "tails" ? "bg-amber-600 hover:bg-amber-700 font-bold" : ""}
                     onClick={() => setChoice("tails")}
                   >
-                    ⚔️ COROA
+                    🏛️ Coroa (Tails)
                   </Button>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Penáltis em Jogo (Mínimo: 0.5)</Label>
+                <Label>Valor da Aposta (Penáltis)</Label>
                 <Input
                   type="number"
                   step="0.5"
@@ -265,143 +201,136 @@ export default function CoinFlipPage({ params }: { params: Promise<{ id: string 
                 />
               </div>
 
-              <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold">
-                Criar Sala de Duelo! ⚔️
+              <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 font-bold gap-2">
+                <Swords className="w-4 h-4" /> Lançar Desafio de Duelo
               </Button>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Duelos Prontos para Girar */}
-      {readyDuels.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-lg font-bold flex items-center gap-2 text-emerald-600">
-            <Sparkles className="w-5 h-5 animate-spin" /> Duelos Prontos para Girar a Moeda!
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {readyDuels.map((d) => {
-              const p1 = d.bets[0];
-              const p2 = d.bets[1];
-              const isSpinning = spinningId === d.id;
+      {/* 3D Coin Animation Overlay Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-8 max-w-md w-full text-center space-y-6 shadow-2xl text-white">
+            <h3 className="text-xl font-extrabold flex items-center justify-center gap-2 text-amber-400">
+              <Coins className="w-6 h-6" /> Duelo em Curso!
+            </h3>
 
-              return (
-                <Card key={d.id} className="border-emerald-500/50 bg-emerald-500/5 shadow-md">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex justify-between items-center">
-                      <span>Duelo por {p1.amount} Penálti(s) 🍺</span>
-                      <span className="text-xs bg-emerald-500 text-white px-2 py-0.5 rounded-full font-bold">Pronto!</span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-around text-center py-2 bg-background/80 rounded-lg border">
-                      <div>
-                        <div className="font-extrabold text-sm">{p1.participant?.name}</div>
-                        <div className="text-xs text-amber-600 font-bold">{p1.choice === "heads" ? "👑 CARA" : "⚔️ COROA"}</div>
-                      </div>
-                      <div className="text-lg font-black text-muted-foreground">VS</div>
-                      <div>
-                        <div className="font-extrabold text-sm">{p2.participant?.name}</div>
-                        <div className="text-xs text-amber-600 font-bold">{p2.choice === "heads" ? "👑 CARA" : "⚔️ COROA"}</div>
-                      </div>
-                    </div>
+            <div className="py-6 flex items-center justify-center">
+              {spinningId ? (
+                <div className="relative w-32 h-32 rounded-full bg-gradient-to-tr from-amber-600 via-yellow-400 to-amber-200 border-4 border-amber-300 shadow-2xl flex items-center justify-center animate-spin text-4xl">
+                  🪙
+                </div>
+              ) : activeResult ? (
+                <div className="space-y-3 animate-in zoom-in-75 duration-300">
+                  <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 border-4 border-white shadow-2xl flex flex-col items-center justify-center text-slate-950 font-black">
+                    <span className="text-4xl">{activeResult.result === "heads" ? "👑" : "🏛️"}</span>
+                    <span className="text-xs uppercase font-extrabold mt-1">
+                      {activeResult.result === "heads" ? "Cara" : "Coroa"}
+                    </span>
+                  </div>
+                  <div className="text-lg font-black text-amber-400">
+                    Vencedor: {activeResult.winner?.name || "Ninguém"}! 🎉
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    {activeResult.loser?.name || "O adversário"} bebe o penálti de derrota! 🍺
+                  </p>
+                </div>
+              ) : null}
+            </div>
 
-                    <Button
-                      onClick={() => handleSpinCoin(d.id)}
-                      disabled={isSpinning}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-11 gap-2 shadow-lg"
-                    >
-                      {isSpinning ? <RotateCw className="w-5 h-5 animate-spin" /> : <Coins className="w-5 h-5" />}
-                      {isSpinning ? "A girar a moeda..." : "GIRAR MOEDA AGORA! 🪙"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
+            {!spinningId && (
+              <Button onClick={() => setShowModal(false)} className="w-full bg-amber-600 hover:bg-amber-700 font-bold">
+                Fechar & Continuar
+              </Button>
+            )}
           </div>
         </div>
       )}
 
-      {/* Duelos Abertos à Procura de Oponente */}
-      <div className="space-y-3">
-        <h2 className="text-lg font-bold flex items-center gap-2">
-          <Swords className="w-5 h-5 text-amber-500" /> Duelos Abertos (À espera de oponente)
-        </h2>
-        {openDuels.length === 0 ? (
-          <Card className="p-8 text-center text-muted-foreground text-sm border-dashed">
-            ⚔️ Nenhum duelo aberto neste momento. Clica em "Criar Duelo 1v1" para desafiares um amigo!
+      {/* DUELS LIST */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {duels.length === 0 ? (
+          <Card className="col-span-2 border-dashed p-8 text-center text-muted-foreground text-sm">
+            Nenhum duelo aberto no momento. Clica em &quot;Criar Duelo 1v1&quot; para desafiar os teus amigos! ⚔️
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {openDuels.map((d) => {
-              const creator = d.bets[0];
-              const oppositeChoice = creator.choice === "heads" ? "COROA ⚔️" : "CARA 👑";
-              const isMine = creator.participantId === activeParticipantId;
+          duels.map((d) => {
+            const hostBet = d.bets?.[0];
+            const challengerBet = d.bets?.[1];
+            const isFinished = !!d.result;
+            const isHost = hostBet?.participantId === activeParticipantId;
 
-              return (
-                <Card key={d.id} className="border-amber-500/30 bg-gradient-to-br from-card to-amber-500/5 shadow">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex justify-between items-center">
-                      <span>Desafio de {creator.participant?.name}</span>
-                      <span className="text-xs font-bold bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full">
-                        {creator.amount} Penálti(s)
-                      </span>
+            return (
+              <Card key={d.id} className="border-amber-500/20 shadow-md">
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                      <Swords className="w-4 h-4 text-amber-500" /> Duelo 1v1
                     </CardTitle>
-                    <CardDescription className="text-xs">
-                      Escolheu {creator.choice === "heads" ? "👑 CARA" : "⚔️ COROA"}. O oponente fica com {oppositeChoice}!
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {isMine ? (
-                      <div className="text-xs text-amber-600 font-semibold p-2 bg-amber-500/10 rounded text-center">
-                        Este duelo é teu! À espera que outro amigo aceite...
+                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
+                      isFinished ? "bg-muted text-muted-foreground" : "bg-emerald-500/10 text-emerald-600"
+                    }`}>
+                      {isFinished ? "Concluído" : "Aberto"}
+                    </span>
+                  </div>
+                  <CardDescription className="text-xs">
+                    Criado por: <span className="font-semibold text-foreground">{hostBet?.participant?.name || "Desconhecido"}</span>
+                  </CardDescription>
+                </CardHeader>
+
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3 text-center">
+                    {/* Host Side */}
+                    <div className="p-3 rounded-xl bg-slate-900 text-white space-y-1">
+                      <span className="text-[10px] text-slate-400 block font-bold">Criador</span>
+                      <div className="font-bold text-sm truncate">{hostBet?.participant?.name}</div>
+                      <div className="text-xs text-amber-400 font-extrabold">
+                        {hostBet?.choice === "heads" ? "👑 Cara" : "🏛️ Coroa"} ({hostBet?.amount} 🍺)
+                      </div>
+                    </div>
+
+                    {/* Challenger Side */}
+                    <div className="p-3 rounded-xl bg-slate-900 text-white space-y-1">
+                      <span className="text-[10px] text-slate-400 block font-bold">Adversário</span>
+                      {challengerBet ? (
+                        <>
+                          <div className="font-bold text-sm truncate">{challengerBet.participant?.name}</div>
+                          <div className="text-xs text-amber-400 font-extrabold">
+                            {challengerBet.choice === "heads" ? "👑 Cara" : "🏛️ Coroa"} ({challengerBet.amount} 🍺)
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-xs text-slate-400 italic py-2">A aguardar oponente...</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {!isFinished ? (
+                    isHost ? (
+                      <div className="text-xs text-center text-muted-foreground py-2 font-medium">
+                        À espera que outro utilizador entre no teu duelo... ⏳
                       </div>
                     ) : (
                       <Button
                         onClick={() => handleJoinDuel(d.id)}
-                        className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs h-10 gap-2"
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2"
                       >
-                        <UserCheck className="w-4 h-4" /> Aceitar Duelo como {currentName}! ⚔️
+                        <UserCheck className="w-4 h-4" /> Aceitar Duelo como {currentName} ⚔️
                       </Button>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                    )
+                  ) : (
+                    <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600 font-bold text-xs text-center">
+                      🏆 Resultado: {d.result === "heads" ? "👑 Cara" : "🏛️ Coroa"}! Duelo Encerrado.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })
         )}
       </div>
-
-      {/* Finished Duels */}
-      <Card className="border-border/60">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-amber-500" /> Histórico de Duelos Concluídos
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {finishedDuels.length === 0 ? (
-            <div className="text-center py-6 text-xs text-muted-foreground">Ainda não há duelos concluídos.</div>
-          ) : (
-            finishedDuels.map((d) => {
-              const winnerBet = d.bets.find((b: any) => b.choice === d.result);
-              const loserBet = d.bets.find((b: any) => b.choice !== d.result);
-
-              return (
-                <div key={d.id} className="flex items-center justify-between p-3 border rounded-lg bg-card text-xs">
-                  <div>
-                    <span className="font-bold text-emerald-600">🏆 {winnerBet?.participant?.name}</span> venceu contra{" "}
-                    <span className="font-bold text-red-500">{loserBet?.participant?.name}</span> ({winnerBet?.amount} penálti(s))
-                  </div>
-                  <div className="font-mono font-bold bg-muted px-2 py-1 rounded">
-                    Moeda: {d.result === "heads" ? "CARA 👑" : "COROA ⚔️"}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
