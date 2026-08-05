@@ -5,15 +5,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id: partyId } = await params;
 
+    // Only return open active duels (result is null) - no old history stored
     const coinFlips = await prisma.coinFlip.findMany({
-      where: { partyId },
+      where: { partyId, result: null },
       include: {
         bets: {
           include: { participant: true },
         },
       },
       orderBy: { createdAt: "desc" },
-      take: 20,
     });
 
     return NextResponse.json({ coinFlips });
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ success: true, duel });
     }
 
-    // 2. Join and Automatically Resolve 1v1 Duel
+    // 2. Join, Resolve 1v1 Duel & Delete Game Record Immediately
     if (action === "join_duel") {
       if (!participantId || !coinFlipId) {
         return NextResponse.json({ error: "ID do duelo e participante são necessários" }, { status: 400 });
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // Random Coin Flip Result ("heads" or "tails")
       const result = Math.random() < 0.5 ? "heads" : "tails";
 
-      // Add opponent bet and mark duel result as finished
+      // Create opponent bet
       await prisma.coinFlipBet.create({
         data: {
           coinFlipId,
@@ -99,16 +99,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         },
       });
 
-      const updatedDuel = await prisma.coinFlip.update({
+      const updatedDuel = await prisma.coinFlip.findUnique({
         where: { id: coinFlipId },
-        data: { result },
         include: { bets: { include: { participant: true } } },
       });
 
-      const winnerBet = updatedDuel.bets.find((b) => b.choice === result);
-      const loserBet = updatedDuel.bets.find((b) => b.choice !== result);
+      const winnerBet = updatedDuel?.bets.find((b) => b.choice === result);
+      const loserBet = updatedDuel?.bets.find((b) => b.choice !== result);
 
       if (winnerBet && loserBet) {
+        // Apply penalties to balances (the consequences)
         await prisma.penaltyBalance.upsert({
           where: { participantId: winnerBet.participantId },
           update: { balance: { increment: winnerBet.amount } },
@@ -134,12 +134,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         });
       }
 
+      // Delete finished game record from database to keep DB clean and memory-free
+      await prisma.coinFlip.delete({ where: { id: coinFlipId } });
+
       return NextResponse.json({
         success: true,
         result,
         winner: winnerBet?.participant,
         loser: loserBet?.participant,
-        duel: updatedDuel,
       });
     }
 

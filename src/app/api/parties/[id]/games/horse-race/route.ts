@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id: partyId } = await params;
 
     let currentRace = await prisma.horseRace.findFirst({
-      where: { partyId },
+      where: { partyId, status: { in: ["betting", "racing"] } },
       include: {
         bets: {
           include: { participant: true },
@@ -97,16 +97,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Corrida não encontrada" }, { status: 404 });
       }
 
-      const updatedRace = await prisma.horseRace.update({
-        where: { id: raceId },
-        data: {
-          status: "finished",
-          winnerHorse: Number(winningHorse),
-        },
-        include: { bets: { include: { participant: true } } },
-      });
-
-      // Settle bets
+      // Settle bets into consequences (penalty balances & pending transactions)
       for (const b of race.bets) {
         const won = b.horseNumber === Number(winningHorse);
         if (won) {
@@ -135,10 +126,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }
       }
 
-      return NextResponse.json({ success: true, winningHorse, race: updatedRace });
+      // Delete finished race record to prevent cluttering DB
+      await prisma.horseRace.delete({ where: { id: raceId } });
+
+      return NextResponse.json({ success: true, winningHorse });
     }
 
     if (action === "new_race") {
+      // Clean up any old finished races for this party first
+      await prisma.horseRace.deleteMany({ where: { partyId, status: "finished" } });
+
       const newRace = await prisma.horseRace.create({
         data: {
           partyId,
