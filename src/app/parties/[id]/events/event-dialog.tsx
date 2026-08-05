@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition, useMemo } from "react";
-import { Plus, Loader2, Trash2, Users, PackageOpen, Check, ChevronsUpDown, Search } from "lucide-react";
+import { Plus, Loader2, Trash2, Users, PackageOpen, Check, ChevronsUpDown, Search, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { saveEvent } from "./actions";
+import { useActiveParticipant } from "@/lib/use-active-participant";
 
 export function EventDialog({ 
   partyId, 
@@ -29,6 +30,9 @@ export function EventDialog({
   onOpenChange,
   existingEvent
 }: any) {
+  const { currentParticipant } = useActiveParticipant(partyId);
+  const isManager = currentParticipant?.role === "manager";
+
   const [isPending, startTransition] = useTransition();
   const isEditing = !!existingEvent;
 
@@ -37,6 +41,7 @@ export function EventDialog({
     existingEvent?.date ? new Date(existingEvent.date).toISOString().split('T')[0] : ""
   );
   const [description, setDescription] = useState(existingEvent?.description || "");
+  const [profitMargin, setProfitMargin] = useState<number>(existingEvent?.profitMargin ?? 5);
   const [itemSearch, setItemSearch] = useState("");
 
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>(
@@ -49,7 +54,6 @@ export function EventDialog({
     })) || []
   );
 
-  // Group inventory by category
   const inventoryByCategory = useMemo(() => {
     const groups: Record<string, any[]> = {};
     for (const item of inventory) {
@@ -57,11 +61,9 @@ export function EventDialog({
       if (!groups[catName]) groups[catName] = [];
       groups[catName].push(item);
     }
-    // Sort categories alphabetically
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [inventory]);
 
-  // Filter inventory items by search
   const filteredInventory = useMemo(() => {
     if (!itemSearch) return inventoryByCategory;
     const q = itemSearch.toLowerCase();
@@ -80,7 +82,6 @@ export function EventDialog({
       return;
     }
 
-    // Filter out items with 0 quantity
     const itemsToSave = selectedItems.filter(i => i.quantityUsed > 0);
 
     startTransition(async () => {
@@ -90,6 +91,7 @@ export function EventDialog({
         name,
         date,
         description,
+        profitMargin: Number(profitMargin),
         participants: selectedParticipants.map(id => ({ participantId: id })),
         items: itemsToSave
       });
@@ -105,7 +107,6 @@ export function EventDialog({
     });
   };
 
-  // Participant helpers
   const allSelected = participants.length > 0 && selectedParticipants.length === participants.length;
 
   const toggleAll = () => {
@@ -124,8 +125,6 @@ export function EventDialog({
     }
   };
 
-  // Item helpers - inline quantity editing
-  // When editing, the available qty includes what was previously used by this event
   const getOriginalUsed = (itemId: string) => {
     if (!existingEvent) return 0;
     const found = existingEvent.itemsUsed?.find((ei: any) => ei.inventoryItemId === itemId);
@@ -221,6 +220,27 @@ export function EventDialog({
                 <Label>Descrição (opcional)</Label>
                 <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Ex: Bifanas e cerveja no primeiro dia..." />
               </div>
+
+              {isManager && (
+                <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-2">
+                  <Label className="flex items-center gap-1.5 font-bold text-amber-600 text-xs">
+                    <ShieldAlert className="w-4 h-4" /> Margem de Lucro Oculta (%)
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={profitMargin}
+                      onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
+                      className="w-32 font-bold text-sm"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      Aplica um acrescento de {profitMargin}% aos custos de consumo desta noite no calculador de saldos (visível apenas para o Gestor).
+                    </span>
+                  </div>
+                </div>
+              )}
 
               <div className="border rounded-lg p-4 bg-muted/30 space-y-2">
                 <h4 className="font-semibold text-sm">Resumo rápido:</h4>

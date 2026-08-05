@@ -61,8 +61,9 @@ export function calculateBalances(party: PartyWithDetails) {
 
   // 2. Events & Inventory Used — divide equally among all event participants
   for (const event of party.events) {
+    const marginMultiplier = 1 + ((event as any).profitMargin || 0) / 100;
     for (const itemUsed of event.itemsUsed) {
-      const cost = itemUsed.quantityUsed * itemUsed.inventoryItem.unitPrice;
+      const cost = itemUsed.quantityUsed * itemUsed.inventoryItem.unitPrice * marginMultiplier;
 
       // Divide equally among ALL event participants
       const consumers = event.participants.map(p => p.participantId);

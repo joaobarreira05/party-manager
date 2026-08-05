@@ -102,6 +102,7 @@ model Event {
   name         String
   date         DateTime?
   description  String?
+  profitMargin Float              @default(0) // Hidden profit markup (e.g. 5 for 5%)
   partyId      String
   party        Party              @relation(fields: [partyId], references: [id], onDelete: Cascade)
   participants EventParticipant[]

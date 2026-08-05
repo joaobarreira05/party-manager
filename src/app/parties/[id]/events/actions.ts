@@ -52,6 +52,7 @@ export async function saveEvent(data: any) {
         data: {
           name,
           description,
+          profitMargin: data.profitMargin !== undefined ? Number(data.profitMargin) : 5,
           date: date ? new Date(date) : null,
           participants: {
             create: participants.map((p: any) => ({
@@ -92,6 +93,7 @@ export async function saveEvent(data: any) {
           partyId,
           name,
           description,
+          profitMargin: data.profitMargin !== undefined ? Number(data.profitMargin) : 5,
           date: date ? new Date(date) : null,
           participants: {
             create: participants.map((p: any) => ({
