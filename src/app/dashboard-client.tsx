@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { Plus, Users, Wallet, PackageOpen, Search, Download, Loader2 } from "lucide-react";
+import { Plus, Users, Wallet, PackageOpen, Search, Download, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { exportDatabaseToJson } from "./export-action";
+import { deleteParty } from "./parties/actions";
 
 export function DashboardClient({ parties, isManager }: { parties: any[]; isManager?: boolean }) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -29,6 +30,23 @@ export function DashboardClient({ parties, isManager }: { parties: any[]; isMana
         toast.success(`Base de dados exportada com sucesso para: ${res?.path}`);
       }
     });
+  };
+
+  const handleDeleteParty = async (partyId: string, partyName: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`Tens a certeza que queres eliminar a festa "${partyName}"?`)) return;
+
+    try {
+      const res = await deleteParty(partyId);
+      if (res?.error) {
+        toast.error(res.error);
+      } else {
+        toast.success(`Festa "${partyName}" eliminada com sucesso! 🗑️`);
+      }
+    } catch {
+      toast.error("Erro ao eliminar festa");
+    }
   };
 
   const filteredParties = parties.filter((p) =>
@@ -94,14 +112,27 @@ export function DashboardClient({ parties, isManager }: { parties: any[]; isMana
 
             return (
               <Link href={`/parties/${party.id}`} key={party.id}>
-                <Card className="hover:border-primary/50 transition-colors h-full flex flex-col cursor-pointer">
-                  <CardHeader>
-                    <CardTitle className="line-clamp-1">{party.name}</CardTitle>
-                    <CardDescription>
-                      {party.startDate && format(new Date(party.startDate), "dd MMM yyyy")}
-                      {party.endDate && ` - ${format(new Date(party.endDate), "dd MMM yyyy")}`}
-                      {!party.startDate && !party.endDate && "Sem data definida"}
-                    </CardDescription>
+                <Card className="hover:border-primary/50 transition-colors h-full flex flex-col cursor-pointer relative group">
+                  <CardHeader className="flex flex-row items-start justify-between space-y-0">
+                    <div>
+                      <CardTitle className="line-clamp-1">{party.name}</CardTitle>
+                      <CardDescription className="mt-1">
+                        {party.startDate && format(new Date(party.startDate), "dd MMM yyyy")}
+                        {party.endDate && ` - ${format(new Date(party.endDate), "dd MMM yyyy")}`}
+                        {!party.startDate && !party.endDate && "Sem data definida"}
+                      </CardDescription>
+                    </div>
+                    {isManager && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:bg-destructive/10 shrink-0"
+                        onClick={(e) => handleDeleteParty(party.id, party.name, e)}
+                        title="Eliminar Festa"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </CardHeader>
                   <CardContent className="flex-1">
                     <div className="grid grid-cols-2 gap-4 text-sm">

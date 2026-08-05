@@ -56,3 +56,18 @@ export async function createParty(prevState: any, formData: FormData) {
   revalidatePath("/");
   redirect(`/parties/${party.id}`);
 }
+
+export async function deleteParty(partyId: string) {
+  const session = await getSession();
+
+  if (session?.role !== "manager") {
+    return { error: "Apenas a conta de Gestor pode eliminar festas!" };
+  }
+
+  await prisma.party.delete({
+    where: { id: partyId },
+  });
+
+  revalidatePath("/");
+  return { success: true };
+}
