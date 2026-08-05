@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
-import { Trophy, ArrowLeft, Play, Sparkles, User, RefreshCw, Layers, Eye, ShieldAlert } from "lucide-react";
+import { Trophy, ArrowLeft, Play, Sparkles, User, RefreshCw, Layers, Eye, ShieldAlert, Lock } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,15 +46,19 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
   // Positions of 4 Aces (0 to 12)
   const [positions, setPositions] = useState<number[]>([0, 0, 0, 0]);
 
-  // 12 Track obstacle cards (6 on left column, 6 on right column)
+  // 12 Track obstacle cards (6 left, 6 right)
   const [leftColumnCards, setLeftColumnCards] = useState<TrackCard[]>([]);
   const [rightColumnCards, setRightColumnCards] = useState<TrackCard[]>([]);
 
-  // Currently drawn card with 3D animation
+  // Currently drawn card
   const [drawnCard, setDrawnCard] = useState<DrawnCardInfo | null>(null);
   const [isFlippingCard, setIsFlippingCard] = useState(false);
   const [autoPlaying, setAutoPlaying] = useState(false);
   const [winner, setWinner] = useState<number | null>(null);
+
+  const isManager = currentParticipant?.role === "manager";
+  const activeParticipantId = currentParticipant?.participantId;
+  const currentName = currentParticipant?.name || "Utilizador";
 
   const loadData = async () => {
     try {
@@ -93,9 +97,6 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
     setDrawnCard(null);
   };
 
-  const activeParticipantId = currentParticipant?.participantId;
-  const currentName = currentParticipant?.name || "Utilizador";
-
   const handlePlaceBet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeParticipantId || !currentRace) {
@@ -133,7 +134,6 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
     }
   };
 
-  // Lock betting when race starts
   const lockBetsIfNeeded = async () => {
     if (currentRace && currentRace.status === "betting") {
       try {
@@ -149,7 +149,6 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
     }
   };
 
-  // Draw 1 single card step with realistic playing card animation
   const drawNextCardStep = (
     currentPos: number[],
     currentLeft: TrackCard[],
@@ -175,11 +174,9 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
     const newLeft = [...currentLeft];
     const newRight = [...currentRight];
 
-    // Obstacle cards flip when ALL 4 Aces cross a row (Rows 1..12)
     if (minPos > 0 && minPos <= TRACK_STEPS) {
       const stepIdx = minPos - 1;
 
-      // Rows 0..5 on Left, Rows 6..11 on Right
       if (stepIdx < 6) {
         if (newLeft[stepIdx] && !newLeft[stepIdx].flipped) {
           newLeft[stepIdx].flipped = true;
@@ -209,8 +206,11 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
     return { newPos, newLeft, newRight, newWinner };
   };
 
-  // Manual Draw Button
   const handleManualDraw = async () => {
+    if (!isManager) {
+      toast.error("Apenas a conta de Gestor tem autorização para dar ordem de partida e virar cartas!");
+      return;
+    }
     if (winner || !currentRace) return;
     await lockBetsIfNeeded();
     setIsFlippingCard(true);
@@ -228,8 +228,11 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
     }, 250);
   };
 
-  // Auto Play Mode
   const handleAutoPlay = async () => {
+    if (!isManager) {
+      toast.error("Apenas a conta de Gestor tem autorização para iniciar o Modo Automático!");
+      return;
+    }
     if (winner || !currentRace) return;
     await lockBetsIfNeeded();
     setAutoPlaying(true);
@@ -279,6 +282,10 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
   };
 
   const handleNewRace = async () => {
+    if (!isManager) {
+      toast.error("Apenas o Gestor pode criar novas corridas!");
+      return;
+    }
     try {
       const res = await fetch(`/api/parties/${partyId}/games/horse-race`, {
         method: "POST",
@@ -289,7 +296,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
       if (data.currentRace) {
         setCurrentRace(data.currentRace);
         initTrackCards();
-        toast.success("Nova Corrida de Cartas aberta para apostas!");
+        toast.success("Nova Corrida de Cartas aberta pelo Gestor!");
       }
     } catch (e) {
       toast.error("Erro ao criar nova corrida");
@@ -312,17 +319,19 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
               <Trophy className="w-6 h-6 text-amber-500" /> Corrida dos 4 Áses (Baralho de Cartas)
             </h1>
             <p className="text-muted-foreground text-xs">
-              Sessão como <span className="font-bold text-foreground">{currentName}</span>. 2 Colunas de cartas nas laterais!
+              Sessão como <span className="font-bold text-foreground">{currentName}</span> ({isManager ? "Gestor" : "Utilizador"}).
             </p>
           </div>
         </div>
 
-        <Button variant="outline" size="sm" onClick={handleNewRace} className="gap-2">
-          <RefreshCw className="w-4 h-4" /> Nova Corrida
-        </Button>
+        {isManager && (
+          <Button variant="outline" size="sm" onClick={handleNewRace} className="gap-2">
+            <RefreshCw className="w-4 h-4" /> Nova Corrida (Gestor)
+          </Button>
+        )}
       </div>
 
-      {/* TRACK BOARD: LEFT COLUMN - 4 ACES TRACK - RIGHT COLUMN */}
+      {/* TRACK BOARD */}
       <Card className="border-amber-500/40 shadow-2xl overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-6 space-y-6 text-white">
         {/* Controls Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
@@ -336,34 +345,41 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
                   <ShieldAlert className="w-3.5 h-3.5" /> Apostas Fechadas (Corrida em Curso)
                 </span>
               ) : (
-                <span className="text-emerald-400 font-bold">🟢 Apostas Abertas! Aposta antes de tirar a 1ª carta.</span>
+                <span className="text-emerald-400 font-bold">🟢 Apostas Abertas! Aposta no teu Ás favorito.</span>
               )}
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <Button
-              onClick={handleManualDraw}
-              disabled={autoPlaying || !!winner || currentRace?.status === "finished"}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs gap-1.5 shadow-lg"
-            >
-              <Eye className="w-4 h-4" /> Tirar Carta 🃏
-            </Button>
+            {isManager ? (
+              <>
+                <Button
+                  onClick={handleManualDraw}
+                  disabled={autoPlaying || !!winner || currentRace?.status === "finished"}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs gap-1.5 shadow-lg"
+                >
+                  <Eye className="w-4 h-4" /> Tirar Carta 🃏
+                </Button>
 
-            <Button
-              onClick={handleAutoPlay}
-              disabled={autoPlaying || !!winner || currentRace?.status === "finished"}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-lg"
-            >
-              <Play className="w-4 h-4 fill-white" /> {autoPlaying ? "A correr..." : "Modo Automático ⚡"}
-            </Button>
+                <Button
+                  onClick={handleAutoPlay}
+                  disabled={autoPlaying || !!winner || currentRace?.status === "finished"}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-lg"
+                >
+                  <Play className="w-4 h-4 fill-white" /> {autoPlaying ? "A correr..." : "Modo Automático ⚡"}
+                </Button>
+              </>
+            ) : (
+              <div className="text-xs font-bold bg-amber-500/20 text-amber-300 px-3 py-1.5 rounded-lg flex items-center gap-2 border border-amber-500/30">
+                <Lock className="w-3.5 h-3.5" /> A aguardar ordem de partida do Gestor...
+              </div>
+            )}
           </div>
         </div>
 
         {/* CENTER DECK & DRAWN PLAYING CARD ANIMATION STAGE */}
         <div className="flex items-center justify-center py-4 border-b border-slate-800/80">
           <div className="flex items-center gap-8">
-            {/* The Main Deck Back */}
             <div className="flex flex-col items-center gap-1">
               <div className="w-16 h-24 rounded-xl bg-gradient-to-tr from-amber-700 via-amber-600 to-yellow-500 border-2 border-white shadow-2xl flex items-center justify-center font-black text-white text-xl">
                 🂠
@@ -373,7 +389,6 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
 
             <div className="text-xl text-slate-500 font-black">➔</div>
 
-            {/* The Realistic Drawn Card Display */}
             <div className="flex flex-col items-center gap-1 min-w-[90px]">
               {drawnCard ? (
                 <div
@@ -393,7 +408,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
                 </div>
               ) : (
                 <div className="w-16 h-24 rounded-xl border-2 border-dashed border-slate-700 flex items-center justify-center text-xs text-slate-500 text-center px-1">
-                  Tira uma carta
+                  Aguardar carta
                 </div>
               )}
               <span className="text-[10px] text-amber-400 font-bold">Carta Revelada</span>
@@ -401,7 +416,7 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
           </div>
         </div>
 
-        {/* MAIN BOARD: LEFT COLUMN (6 Cards) - RACE TRACK - RIGHT COLUMN (6 Cards) */}
+        {/* MAIN BOARD */}
         <div className="grid grid-cols-12 gap-3 items-center">
           {/* Left Column (Rows 1..6) */}
           <div className="col-span-2 space-y-2">
@@ -441,14 +456,12 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
                   </div>
 
                   <div className="relative h-14 bg-slate-900 rounded-xl border-2 border-slate-700/80 flex items-center px-2 overflow-hidden shadow-inner">
-                    {/* 12 Step Grids */}
                     <div className="absolute inset-0 grid grid-cols-12 border-slate-800/50">
                       {Array.from({ length: 12 }).map((_, stepIdx) => (
                         <div key={stepIdx} className="border-r border-slate-800/60" />
                       ))}
                     </div>
 
-                    {/* Physical Ace Playing Card Moving */}
                     <div
                       className="absolute transition-all duration-300 z-20 flex items-center"
                       style={{ left: `${Math.max(1, (pos / TRACK_STEPS) * 88)}%` }}
@@ -459,7 +472,6 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
                       </div>
                     </div>
 
-                    {/* Goal Finish Line */}
                     <div className="absolute right-0 top-0 bottom-0 w-8 bg-red-600/90 border-l-2 border-dashed border-white flex items-center justify-center text-[10px] font-black text-white z-10 shadow">
                       🏁
                     </div>
@@ -497,7 +509,6 @@ export default function HorseRacePage({ params }: { params: Promise<{ id: string
 
       {/* Betting Form & Active Bets */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Form */}
         <Card className={`border-border/60 ${isBettingClosed ? "opacity-75" : ""}`}>
           <CardHeader>
             <CardTitle className="text-lg flex justify-between items-center">

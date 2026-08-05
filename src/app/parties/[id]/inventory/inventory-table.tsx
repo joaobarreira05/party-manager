@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { Plus, Edit, Trash2, Copy, Loader2, Upload, ShoppingCart } from "lucide-react";
+import { Plus, Edit, Trash2, Copy, Loader2, Upload, ShoppingCart, Lock } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
@@ -20,8 +20,12 @@ import {
 import { InventoryDialog } from "./inventory-dialog";
 import { RestockDialog } from "./restock-dialog";
 import { deleteInventoryItem, duplicateInventoryItem, importInventoryItems, deleteAllInventoryItems } from "./actions";
+import { useActiveParticipant } from "@/lib/use-active-participant";
 
 export function InventoryTable({ partyId, items, categories }: any) {
+  const { currentParticipant } = useActiveParticipant(partyId);
+  const isManager = currentParticipant?.role === "manager";
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isRestockOpen, setIsRestockOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
@@ -38,28 +42,38 @@ export function InventoryTable({ partyId, items, categories }: any) {
   });
 
   const sortedItems = [...filteredItems].sort((a: any, b: any) => {
-    // First group by category
     const catA = a.category?.name || "zzz_Sem Categoria";
     const catB = b.category?.name || "zzz_Sem Categoria";
     const catCompare = catA.localeCompare(catB);
     if (catCompare !== 0) return catCompare;
-    // Then sort by product name within category
     return a.name.localeCompare(b.name);
   });
 
   const totalGasto = sortedItems.reduce((acc: number, item: any) => acc + item.totalPrice, 0);
 
   const handleEdit = (item: any) => {
+    if (!isManager) {
+      toast.error("Apenas o Gestor pode editar produtos!");
+      return;
+    }
     setSelectedItem(item);
     setIsDialogOpen(true);
   };
 
   const handleAddNew = () => {
+    if (!isManager) {
+      toast.error("Apenas o Gestor pode adicionar novos produtos!");
+      return;
+    }
     setSelectedItem(null);
     setIsDialogOpen(true);
   };
 
   const handleDelete = (id: string) => {
+    if (!isManager) {
+      toast.error("Apenas o Gestor pode apagar produtos!");
+      return;
+    }
     if (confirm("Tem a certeza que deseja apagar este produto?")) {
       startTransition(() => {
         deleteInventoryItem(id, partyId);
@@ -68,12 +82,20 @@ export function InventoryTable({ partyId, items, categories }: any) {
   };
 
   const handleDuplicate = (id: string) => {
+    if (!isManager) {
+      toast.error("Apenas o Gestor pode duplicar produtos!");
+      return;
+    }
     startTransition(() => {
       duplicateInventoryItem(id, partyId);
     });
   };
 
   const handleDeleteAll = () => {
+    if (!isManager) {
+      toast.error("Apenas o Gestor pode apagar o inventário!");
+      return;
+    }
     if (confirm("Tens a certeza que queres eliminar tudo?")) {
       startTransition(() => {
         deleteAllInventoryItems(partyId);
@@ -82,6 +104,10 @@ export function InventoryTable({ partyId, items, categories }: any) {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isManager) {
+      toast.error("Apenas o Gestor pode importar ficheiros!");
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -90,7 +116,6 @@ export function InventoryTable({ partyId, items, categories }: any) {
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: "binary" });
-        // Read the second sheet if it exists, otherwise fallback to the first
         const wsname = wb.SheetNames.length > 1 ? wb.SheetNames[1] : wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws);
@@ -106,7 +131,7 @@ export function InventoryTable({ partyId, items, categories }: any) {
       }
     };
     reader.readAsBinaryString(file);
-    e.target.value = ''; // reset
+    e.target.value = '';
   };
 
   return (
@@ -117,33 +142,41 @@ export function InventoryTable({ partyId, items, categories }: any) {
           <p className="text-muted-foreground">Gerir produtos, comidas e bebidas da festa.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {items.length > 0 && (
+          {isManager ? (
             <>
-              <Button variant="destructive" onClick={handleDeleteAll} disabled={isPending}>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Apagar Tudo
+              {items.length > 0 && (
+                <>
+                  <Button variant="destructive" onClick={handleDeleteAll} disabled={isPending}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Apagar Tudo
+                  </Button>
+                  <Button variant="outline" onClick={() => setIsRestockOpen(true)} disabled={isPending}>
+                    <ShoppingCart className="mr-2 h-4 w-4" />
+                    Adicionar Compras
+                  </Button>
+                </>
+              )}
+              <Button variant="outline" onClick={() => document.getElementById('excel-upload')?.click()} disabled={isPending}>
+                <Upload className="mr-2 h-4 w-4" />
+                Importar Excel
               </Button>
-              <Button variant="outline" onClick={() => setIsRestockOpen(true)} disabled={isPending}>
-                <ShoppingCart className="mr-2 h-4 w-4" />
-                Adicionar Compras
+              <input 
+                type="file" 
+                id="excel-upload" 
+                className="hidden" 
+                accept=".xlsx, .xls, .csv"
+                onChange={handleFileUpload}
+              />
+              <Button onClick={handleAddNew}>
+                <Plus className="mr-2 h-4 w-4" />
+                Novo Produto
               </Button>
             </>
+          ) : (
+            <div className="text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-lg flex items-center gap-1.5 border">
+              <Lock className="w-3.5 h-3.5" /> Apenas o Gestor pode editar o inventário
+            </div>
           )}
-          <Button variant="outline" onClick={() => document.getElementById('excel-upload')?.click()} disabled={isPending}>
-            <Upload className="mr-2 h-4 w-4" />
-            Importar Excel
-          </Button>
-          <input 
-            type="file" 
-            id="excel-upload" 
-            className="hidden" 
-            accept=".xlsx, .xls, .csv"
-            onChange={handleFileUpload}
-          />
-          <Button onClick={handleAddNew}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Produto
-          </Button>
         </div>
       </div>
 
@@ -181,13 +214,13 @@ export function InventoryTable({ partyId, items, categories }: any) {
               <TableHead className="text-right">Qtd. Restante</TableHead>
               <TableHead className="text-right">Preço Total</TableHead>
               <TableHead className="text-right">Preço Unit.</TableHead>
-              <TableHead className="w-[150px]"></TableHead>
+              {isManager && <TableHead className="w-[150px]"></TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {sortedItems.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
+                <TableCell colSpan={isManager ? 7 : 6} className="text-center h-24 text-muted-foreground">
                   Sem produtos encontrados.
                 </TableCell>
               </TableRow>
@@ -202,51 +235,54 @@ export function InventoryTable({ partyId, items, categories }: any) {
                 <React.Fragment key={item.id}>
                   {showCategoryHeader && (
                     <TableRow className="bg-muted/50 hover:bg-muted/50">
-                      <TableCell colSpan={7} className="font-semibold text-muted-foreground py-2">
+                      <TableCell colSpan={isManager ? 7 : 6} className="font-semibold text-muted-foreground py-2">
                         {currentCatName}
                       </TableCell>
                     </TableRow>
                   )}
                   <TableRow>
-                <TableCell className="font-medium">
-                  {item.name}
-                  {item.notes && <p className="text-xs text-muted-foreground">{item.notes}</p>}
-                </TableCell>
-                <TableCell>{item.category?.name || <span className="text-muted-foreground italic">—</span>}</TableCell>
-                <TableCell className="text-right">{item.initialQuantity} {item.unit}</TableCell>
-                <TableCell className="text-right font-medium text-emerald-600 dark:text-emerald-400">
-                  {item.remainingQuantity} {item.unit}
-                </TableCell>
-                <TableCell className="text-right">{item.totalPrice.toFixed(2)} €</TableCell>
-                <TableCell className="text-right">{item.unitPrice.toFixed(2)} €</TableCell>
-                <TableCell className="text-right space-x-1">
-                  <Button variant="ghost" size="icon" onClick={() => handleDuplicate(item.id)} disabled={isPending}>
-                    <Copy className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} disabled={isPending}>
-                    <Edit className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDelete(item.id)} disabled={isPending} className="text-destructive hover:text-destructive">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-              </React.Fragment>
-            )})}
+                    <TableCell className="font-medium">
+                      {item.name}
+                      {item.notes && <p className="text-xs text-muted-foreground">{item.notes}</p>}
+                    </TableCell>
+                    <TableCell>{item.category?.name || <span className="text-muted-foreground italic">—</span>}</TableCell>
+                    <TableCell className="text-right">{item.initialQuantity} {item.unit}</TableCell>
+                    <TableCell className="text-right font-medium text-emerald-600 dark:text-emerald-400">
+                      {item.remainingQuantity} {item.unit}
+                    </TableCell>
+                    <TableCell className="text-right">{item.totalPrice.toFixed(2)} €</TableCell>
+                    <TableCell className="text-right">{item.unitPrice.toFixed(2)} €</TableCell>
+                    {isManager && (
+                      <TableCell className="text-right space-x-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleDuplicate(item.id)} disabled={isPending}>
+                          <Copy className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} disabled={isPending}>
+                          <Edit className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(item.id)} disabled={isPending} className="text-destructive hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                </React.Fragment>
+              );
+            })}
           </TableBody>
           {sortedItems.length > 0 && (
             <TableFooter>
               <TableRow>
                 <TableCell colSpan={4} className="text-right font-bold">Total do Inventário:</TableCell>
                 <TableCell className="text-right font-bold">{totalGasto.toFixed(2)} €</TableCell>
-                <TableCell colSpan={2}></TableCell>
+                <TableCell colSpan={isManager ? 2 : 1}></TableCell>
               </TableRow>
             </TableFooter>
           )}
         </Table>
       </div>
 
-      {isDialogOpen && (
+      {isDialogOpen && isManager && (
         <InventoryDialog 
           partyId={partyId}
           categories={categories}
@@ -256,7 +292,7 @@ export function InventoryTable({ partyId, items, categories }: any) {
         />
       )}
 
-      {isRestockOpen && (
+      {isRestockOpen && isManager && (
         <RestockDialog
           partyId={partyId}
           items={items}

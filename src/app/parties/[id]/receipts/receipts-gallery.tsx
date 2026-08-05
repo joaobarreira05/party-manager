@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef } from "react";
 import { format } from "date-fns";
-import { Plus, Trash2, Upload, X, ZoomIn, Store, StickyNote, Calendar, Loader2, Search, PackageOpen, ShoppingCart } from "lucide-react";
+import { Plus, Trash2, Upload, X, ZoomIn, Store, StickyNote, Calendar, Loader2, Search, PackageOpen, ShoppingCart, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { deleteReceipt, processReceiptOCR } from "./actions";
 import { addReceiptItems } from "../inventory/actions";
+import { useActiveParticipant } from "@/lib/use-active-participant";
 
 type ReceiptItem = {
   id: string;
@@ -32,6 +33,9 @@ type ReceiptItem = {
 };
 
 export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { partyId: string; receipts: any[]; inventory?: any[]; categories?: any[] }) {
+  const { currentParticipant } = useActiveParticipant(partyId);
+  const isManager = currentParticipant?.role === "manager";
+
   const [isPending, startTransition] = useTransition();
   const [isUploading, setIsUploading] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -63,11 +67,14 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isManager) {
+      toast.error("Apenas a conta de Gestor pode carregar faturas!");
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadFile(file);
-    // Create preview
     const reader = new FileReader();
     reader.onload = (ev) => setUploadPreview(ev.target?.result as string);
     reader.readAsDataURL(file);
@@ -75,6 +82,10 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
   };
 
   const handleUpload = async () => {
+    if (!isManager) {
+      toast.error("Apenas a conta de Gestor pode carregar faturas!");
+      return;
+    }
     if (!uploadFile) return;
 
     setIsUploading(true);
@@ -100,7 +111,6 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
         
         let initialItems: ReceiptItem[] = [{ id: crypto.randomUUID(), name: "", quantity: 1, unit: "un", totalPrice: 0 }];
         
-        // Process OCR
         if (uploadPreview) {
           try {
             const ocrRes = await processReceiptOCR(uploadPreview);
@@ -125,7 +135,6 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
 
         setShowUploadDialog(false);
         resetUploadForm();
-        // Show items dialog to review products
         setCurrentReceiptId(data.receipt.id);
         setReceiptItems(initialItems);
         setShowItemsDialog(true);
@@ -147,6 +156,10 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
   };
 
   const handleDelete = (id: string) => {
+    if (!isManager) {
+      toast.error("Apenas o Gestor pode apagar faturas!");
+      return;
+    }
     if (confirm("Tens a certeza que queres apagar esta fatura?")) {
       startTransition(() => {
         deleteReceipt(id, partyId);
@@ -154,7 +167,6 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
     }
   };
 
-  // --- Items form helpers ---
   const addItemRow = () => {
     setReceiptItems(prev => [...prev, { id: crypto.randomUUID(), name: "", quantity: 1, unit: "un", totalPrice: 0 }]);
   };
@@ -170,6 +182,10 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
   };
 
   const handleSaveItems = async () => {
+    if (!isManager) {
+      toast.error("Apenas o Gestor pode guardar produtos no inventário!");
+      return;
+    }
     const validItems = receiptItems.filter(item => item.name.trim() && item.quantity > 0);
     if (validItems.length === 0) {
       toast.error("Adicione pelo menos um produto válido");
@@ -205,9 +221,7 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
     window.location.reload();
   };
 
-  // Autocomplete helper from existing inventory
   const existingProductNames = inventory?.map((i: any) => i.name) || [];
-
   const itemsTotal = receiptItems.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
 
   return (
@@ -218,18 +232,26 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
           <p className="text-muted-foreground">Tire uma foto da fatura e adicione os produtos ao inventário.</p>
         </div>
         <div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-          <Button onClick={() => fileInputRef.current?.click()}>
-            <Upload className="mr-2 h-4 w-4" />
-            Carregar Fatura
-          </Button>
+          {isManager ? (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <Button onClick={() => fileInputRef.current?.click()}>
+                <Upload className="mr-2 h-4 w-4" />
+                Carregar Fatura
+              </Button>
+            </>
+          ) : (
+            <div className="text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" /> Apenas o Gestor pode carregar faturas
+            </div>
+          )}
         </div>
       </div>
 
@@ -256,7 +278,7 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
               ? "Tire uma foto da fatura do supermercado e adicione os produtos diretamente ao inventário."
               : "Tente pesquisar com outros termos."}
           </p>
-          {receipts.length === 0 && (
+          {receipts.length === 0 && isManager && (
             <Button onClick={() => fileInputRef.current?.click()}>
               <Upload className="mr-2 h-4 w-4" />
               Carregar Primeira Fatura
@@ -289,18 +311,20 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
                         : format(new Date(receipt.createdAt), "dd MMM yyyy")}
                     </p>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-destructive shrink-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(receipt.id);
-                    }}
-                    disabled={isPending}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {isManager && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(receipt.id);
+                      }}
+                      disabled={isPending}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
                 {receipt.notes && (
                   <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{receipt.notes}</p>
@@ -376,7 +400,7 @@ export function ReceiptsGallery({ partyId, receipts, inventory, categories }: { 
         </DialogContent>
       </Dialog>
 
-      {/* Items Dialog — Add products from receipt */}
+      {/* Items Dialog */}
       <Dialog open={showItemsDialog} onOpenChange={(open) => { if (!open) handleSkipItems(); }}>
         <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0">
           <DialogHeader className="px-6 py-4 border-b">
