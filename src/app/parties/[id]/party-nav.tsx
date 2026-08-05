@@ -13,8 +13,6 @@ const navItems = [
   { href: "/inventory", label: "Inventário", icon: PackageOpen },
   { href: "/events", label: "Eventos", icon: Calendar },
   { href: "/participants", label: "Participantes", icon: Users },
-  { href: "/expenses", label: "Despesas", icon: Wallet },
-  { href: "/receipts", label: "Faturas", icon: ReceiptText },
   { href: "/reports", label: "Relatórios", icon: FileText },
 ];
 

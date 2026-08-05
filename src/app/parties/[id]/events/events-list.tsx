@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useMemo } from "react";
 import { format } from "date-fns";
-import { Plus, Trash2, Calendar as CalendarIcon, Users, PackageOpen, Loader2, Search, ChevronDown, ChevronUp, Edit } from "lucide-react";
+import { Plus, Trash2, Calendar as CalendarIcon, Users, PackageOpen, Loader2, Search, ChevronDown, ChevronUp, Edit, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,11 +17,11 @@ import {
 } from "@/components/ui/table";
 import { EventDialog } from "./event-dialog";
 import { deleteEvent } from "./actions";
+import { useActiveParticipant } from "@/lib/use-active-participant";
 
 function calculateEventCosts(event: any) {
   const costs: Record<string, { name: string; total: number }> = {};
   
-  // Initialize all participants
   for (const ep of event.participants) {
     costs[ep.participantId] = {
       name: ep.participant.name,
@@ -30,12 +30,12 @@ function calculateEventCosts(event: any) {
   }
 
   let totalEventCost = 0;
+  const marginMultiplier = 1 + ((event as any).profitMargin || 0) / 100;
 
   for (const itemUsed of event.itemsUsed) {
-    const cost = itemUsed.quantityUsed * itemUsed.inventoryItem.unitPrice;
+    const cost = itemUsed.quantityUsed * itemUsed.inventoryItem.unitPrice * marginMultiplier;
     totalEventCost += cost;
 
-    // Divide equally among ALL participants
     const consumers = event.participants.map((p: any) => p.participantId);
 
     if (consumers.length > 0) {
@@ -52,6 +52,9 @@ function calculateEventCosts(event: any) {
 }
 
 export function EventsList({ partyId, events, participants, inventory }: any) {
+  const { currentParticipant } = useActiveParticipant(partyId);
+  const isManager = currentParticipant?.role === "manager";
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [searchQuery, setSearchQuery] = useState("");
@@ -64,6 +67,7 @@ export function EventsList({ partyId, events, participants, inventory }: any) {
   );
 
   const handleDelete = (id: string) => {
+    if (!isManager) return;
     if (confirm("Tem a certeza que deseja apagar este evento? Os produtos consumidos serão repostos no inventário.")) {
       startTransition(() => {
         deleteEvent(id, partyId);
@@ -90,10 +94,16 @@ export function EventsList({ partyId, events, participants, inventory }: any) {
           <h2 className="text-2xl font-bold tracking-tight">Eventos</h2>
           <p className="text-muted-foreground">Registe refeições e momentos da festa.</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Evento
-        </Button>
+        {isManager ? (
+          <Button onClick={() => setIsDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Evento
+          </Button>
+        ) : (
+          <div className="text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-lg flex items-center gap-1.5 border">
+            <Lock className="w-3.5 h-3.5" /> Apenas o Gestor pode criar eventos
+          </div>
+        )}
       </div>
 
       <div className="relative max-w-sm">
@@ -133,19 +143,22 @@ export function EventsList({ partyId, events, participants, inventory }: any) {
                     <Badge variant="outline" className="font-semibold">
                       {totalEventCost.toFixed(2)} €
                     </Badge>
-                    <Button variant="ghost" size="icon" onClick={() => setEditingEvent(event)}>
-                      <Edit className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(event.id)} disabled={isPending} className="text-destructive">
-                      {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                    </Button>
+                    {isManager && (
+                      <>
+                        <Button variant="ghost" size="icon" onClick={() => setEditingEvent(event)}>
+                          <Edit className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(event.id)} disabled={isPending} className="text-destructive">
+                          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {event.description && <p className="text-sm text-muted-foreground">{event.description}</p>}
                 
-                {/* Quick Summary */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div className="flex items-center gap-2 text-sm">
                     <Users className="h-4 w-4 text-muted-foreground" />
@@ -163,7 +176,6 @@ export function EventsList({ partyId, events, participants, inventory }: any) {
                   )}
                 </div>
 
-                {/* Participant badges */}
                 <div className="flex flex-wrap gap-1">
                   {event.participants.map((ep: any) => (
                     <Badge 
@@ -180,7 +192,6 @@ export function EventsList({ partyId, events, participants, inventory }: any) {
                   ))}
                 </div>
 
-                {/* Expand/Collapse for detailed breakdown */}
                 <Button 
                   variant="ghost" 
                   size="sm" 
@@ -196,7 +207,6 @@ export function EventsList({ partyId, events, participants, inventory }: any) {
 
                 {isExpanded && (
                   <div className="space-y-4">
-                    {/* Per-person cost table */}
                     <div className="border rounded-md">
                       <Table>
                         <TableHeader>
@@ -218,7 +228,6 @@ export function EventsList({ partyId, events, participants, inventory }: any) {
                       </Table>
                     </div>
 
-                    {/* Products consumed list */}
                     <div>
                       <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Produtos consumidos:</h4>
                       <div className="border rounded-md">
@@ -235,7 +244,8 @@ export function EventsList({ partyId, events, participants, inventory }: any) {
                           </TableHeader>
                           <TableBody>
                             {event.itemsUsed.map((ei: any) => {
-                              const cost = ei.quantityUsed * ei.inventoryItem.unitPrice;
+                              const marginMultiplier = 1 + ((event as any).profitMargin || 0) / 100;
+                              const cost = ei.quantityUsed * ei.inventoryItem.unitPrice * marginMultiplier;
 
                               return (
                                 <TableRow key={ei.inventoryItemId}>
@@ -262,7 +272,7 @@ export function EventsList({ partyId, events, participants, inventory }: any) {
         })}
       </div>
 
-      {(isDialogOpen || editingEvent) && (
+      {(isDialogOpen || editingEvent) && isManager && (
         <EventDialog 
           partyId={partyId}
           participants={participants}
