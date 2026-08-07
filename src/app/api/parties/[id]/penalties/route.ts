@@ -62,6 +62,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const body = await req.json();
     const { action } = body;
 
+    // --- MANAGER ONLY RESET ALL BALANCES ---
+    if (action === "reset_all") {
+      if (session?.role !== "manager") {
+        return NextResponse.json({ error: "Apenas a conta de Gestor pode resetar os penáltis!" }, { status: 403 });
+      }
+
+      const partyParticipants = await prisma.participant.findMany({
+        where: { partyId },
+        select: { id: true },
+      });
+      const pIds = partyParticipants.map((p) => p.id);
+
+      // Reset all balances to 0
+      await prisma.penaltyBalance.updateMany({
+        where: { participantId: { in: pIds } },
+        data: { balance: 0 },
+      });
+
+      // Clear pending drink transactions for this party
+      await prisma.penaltyTransaction.deleteMany({
+        where: { partyId },
+      });
+
+      return NextResponse.json({ success: true, message: "Todos os penáltis foram resetados pelo Gestor! 🔄" });
+    }
+
     if (action === "transfer") {
       // Transfer penalties to someone else (min 0.5)
       const { fromParticipantId, toParticipantId, amount } = body;
@@ -74,7 +100,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "A quantidade mínima para envio é 0.5 penáltis" }, { status: 400 });
       }
 
-      // Check balance of sender: cannot drop below -5
       const senderBalance = await prisma.penaltyBalance.findUnique({
         where: { participantId: fromParticipantId },
       });
@@ -84,14 +109,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Não podes ficar com menos de -5 penáltis!" }, { status: 400 });
       }
 
-      // Update sender balance (subtract)
+      // Update sender balance
       await prisma.penaltyBalance.upsert({
         where: { participantId: fromParticipantId },
         update: { balance: { decrement: amount } },
         create: { participantId: fromParticipantId, balance: -amount },
       });
 
-      // Update receiver balance (subtract - meaning they owe drinking it)
+      // Update receiver balance
       await prisma.penaltyBalance.upsert({
         where: { participantId: toParticipantId },
         update: { balance: { decrement: amount } },
